@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.5)
 project(dfs)
 
 add_executable(test-structures test-structures.cpp)
-target_link_libraries(test-structures dfs)
+target_link_libraries(test-structures dfs::dfs)
 
 add_executable(structcheck structcheck.cpp)
-target_link_libraries(structcheck dfs)
+target_link_libraries(structcheck dfs::dfs)
 if(MSVC)
 	target_link_libraries(structcheck unofficial::getopt-win32::getopt)
 endif()
@@ -13,7 +13,7 @@ endif()
 set(DF_STRUCTURES_PATH CACHE PATH "Path to df-structures xml")
 
 add_executable(reader reader.cpp)
-generate_df_types(TARGET reader
+dfs_generate_df_types(TARGET reader
 	STRUCTURES ${DF_STRUCTURES_PATH}
 	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/reader_df_types
 	TYPES
@@ -31,7 +31,7 @@ generate_df_types(TARGET reader
 		cie_add_tag_mask1
 )
 target_include_directories(reader PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(reader dfs)
+target_link_libraries(reader dfs::dfs)
 if(MSVC)
 	target_link_libraries(reader unofficial::getopt-win32::getopt)
 endif()

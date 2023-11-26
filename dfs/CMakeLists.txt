@@ -79,3 +79,4 @@ install(TARGETS dfs
 	ARCHIVE DESTINATION lib
 	PUBLIC_HEADER DESTINATION include/dfs
 )
+add_library(dfs::dfs ALIAS dfs)
