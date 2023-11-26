@@ -74,9 +74,17 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
 endif()
 install(TARGETS dfs
 	EXPORT dfs_targets
-	RUNTIME DESTINATION bin
-	LIBRARY DESTINATION lib
-	ARCHIVE DESTINATION lib
-	PUBLIC_HEADER DESTINATION include/dfs
+	RUNTIME
+		DESTINATION bin
+		COMPONENT Runtime
+	LIBRARY
+		DESTINATION lib
+		COMPONENT Runtime
+	ARCHIVE
+		DESTINATION lib
+		COMPONENT Development
+	PUBLIC_HEADER
+		DESTINATION include/dfs
+		COMPONENT Development
 )
 add_library(dfs::dfs ALIAS dfs)

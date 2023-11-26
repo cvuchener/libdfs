@@ -30,6 +30,7 @@ install(EXPORT dfs_targets
 	FILE dfs-targets.cmake
 	NAMESPACE dfs::
 	DESTINATION lib/cmake/dfs
+	COMPONENT Development
 )
 
 include(CMakePackageConfigHelpers)
@@ -44,5 +45,6 @@ install(FILES
 	${CMAKE_CURRENT_BINARY_DIR}/cmake/dfs-config.cmake
 	${CMAKE_CURRENT_SOURCE_DIR}/cmake/dfs-functions.cmake
 	DESTINATION lib/cmake/dfs
+	COMPONENT Development
 )
 
