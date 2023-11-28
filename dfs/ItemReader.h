@@ -502,6 +502,8 @@ public:
 	{
 	}
 
+	virtual ~PointerReader() = default;
+
 	virtual cppcoro::task<std::unique_ptr<T>> make_unique(ReadSession &session, uintptr_t addr) const = 0;
 	virtual cppcoro::task<std::shared_ptr<T>> make_shared(ReadSession &session, uintptr_t addr) const = 0;
 
@@ -542,6 +544,8 @@ public:
 	{
 	}
 
+	~StaticPointerReader() override = default;
+
 	cppcoro::task<std::unique_ptr<T>> make_unique(ReadSession &session, uintptr_t addr) const override
 	{
 		if (addr == 0)
@@ -573,6 +577,8 @@ public:
 	{
 		// TODO: check type
 	}
+
+	~PolymorphicPointerReader() override = default;
 
 	cppcoro::task<std::unique_ptr<T>> make_unique(ReadSession &session, uintptr_t addr) const override
 	{
