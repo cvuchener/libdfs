@@ -27,6 +27,21 @@
 
 namespace dfs {
 
+template <typename T>
+struct integral_like: std::false_type {};
+
+template <std::integral T>
+struct integral_like<T>: std::true_type {};
+
+template <typename T> requires std::is_enum_v<T>
+struct integral_like<T>: std::true_type {};
+
+template <typename T> requires std::constructible_from<T, typename T::underlying_type>
+struct integral_like<T>: std::true_type {};
+
+template <typename Rep, typename Period>
+struct integral_like<std::chrono::duration<Rep, Period>>: std::true_type {};
+
 /**
  * Reader for integral and integral-like types.
  *
@@ -35,10 +50,7 @@ namespace dfs {
  *
  * \ingroup readers
  */
-template <typename T> requires (
-	std::integral<T> ||
-	std::is_enum_v<T> ||
-	std::constructible_from<T, typename T::underlying_type>)
+template <typename T> requires integral_like<T>::value
 class ItemReader<T>
 {
 	std::size_t _size;
