@@ -93,7 +93,7 @@ public:
 
 	std::set<std::string> getInterfaceDependencies() const override
 	{
-		return { "string_view", "optional" };
+		return { "string_view", "optional", "array" };
 	}
 
 	std::set<std::string> getImplementationDependencies() const override
@@ -113,6 +113,11 @@ public:
 
 		// Enum value count
 		out << std::format("inline constexpr std::underlying_type_t<{}> Count = {};\n\n", name, def.count);
+
+		out << std::format("constexpr std::array<{}, {}> AllValues = {{\n", name, def.values.size());
+		for (const auto &[name, value]: def.values)
+			out << std::format("\t{},\n", name);
+		out << std::format("}};\n\n");
 
 		// Prototypes
 		out << std::format("std::optional<{}> from_string(std::string_view str);\n", name);
