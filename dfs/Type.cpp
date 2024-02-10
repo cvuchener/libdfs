@@ -23,8 +23,6 @@ using namespace dfs;
 string_map<PrimitiveType::Type> PrimitiveType::TypeNames = {
 	{ "bool", PrimitiveType::Bool },
 	{ "d-float", PrimitiveType::DFloat },
-	{ "df-array", PrimitiveType::DFArray },
-	{ "df-flagarray", PrimitiveType::DFFlagArray },
 	{ "int16_t", PrimitiveType::Int16 },
 	{ "int32_t", PrimitiveType::Int32 },
 	{ "int64_t", PrimitiveType::Int64 },
@@ -38,11 +36,8 @@ string_map<PrimitiveType::Type> PrimitiveType::TypeNames = {
 	{ "stl-condition-variable", PrimitiveType::StdConditionVariable },
 	{ "stl-fstream", PrimitiveType::StdFStream },
 	{ "stl-function", PrimitiveType::StdFunction },
-	{ "stl-future", PrimitiveType::StdFuture },
-	{ "stl-map", PrimitiveType::StdMap },
 	{ "stl-mutex", PrimitiveType::StdMutex },
 	{ "stl-string", PrimitiveType::StdString },
-	{ "stl-unordered-map", PrimitiveType::StdUnorderedMap },
 	{ "uint16_t", PrimitiveType::UInt16 },
 	{ "uint32_t", PrimitiveType::UInt32 },
 	{ "uint64_t", PrimitiveType::UInt64 },
@@ -81,14 +76,9 @@ std::string PrimitiveType::to_string(Type type)
 	case StdString: return "stl-string";
 	case StdBitVector: return "stl-bit-vector";
 	case StdFStream: return "stl-fstream";
-	case StdMap: return "stl-map";
-	case StdUnorderedMap: return "stl-unordered-map";
 	case StdMutex: return "stl-mutex";
 	case StdConditionVariable: return "stl-condition-variable";
-	case StdFuture: return "stl-future";
 	case StdFunction: return "stl-function";
-	case DFFlagArray: return "df-flagarray";
-	case DFArray: return "df-array";
 	default: return "invalid";
 	}
 }

@@ -173,14 +173,105 @@ struct ObjectChecker
 		co_await cppcoro::when_all(std::move(tasks));
 	}
 
-	cppcoro::task<> check_value(std::string name, MemoryView data, const Container &container)
+	cppcoro::task<> check_value(std::string name, MemoryView data, const PointerType &pointer)
 	{
-		auto type_info = layout.getTypeInfo(container.item_type);
+		if (pointer.type_params.empty()) // unknown type pointers
+			co_return;
+		assert(pointer.type_params.size() == 1);
+		const auto &item_type = pointer.itemType();
+		auto type_info = layout.getTypeInfo(item_type);
+		if (type_info.size == 0) // skip missing types
+			co_return;
+		if (pointer.has_bad_pointers)
+			co_return;
+		auto ptr = abi.get_pointer(data);
+		if (ptr == 0)
+			co_return;
+		auto actual_type = item_type.get_if<AbstractType>();
+		// down cast class types
+		const Compound *downcast_type = nullptr;
+		auto compound = item_type.get_if<Compound>();
+		if (compound && compound->vtable) {
+			uintptr_t vtable = 0;
+			co_await process.read({ptr, {reinterpret_cast<uint8_t *>(&vtable), abi.pointer.size}});
+			auto it = class_from_vtable.find(vtable);
+			if (it == class_from_vtable.end()) {
+				if (show_vtable_errors)
+					std::cout << std::format("{} ({:#x}): unknown vtable {:#x}\n", name, data.address, vtable);
+			}
+			else {
+				actual_type = downcast_type = it->second;
+				type_info = layout.type_info.at(actual_type);
+			}
+		}
+		// check pointer
+		if (ptr % type_info.align != 0) {
+			std::cout << std::format("{} ({:#x}): invalid pointer {:#x} unaligned (required {})\n", name, data.address, ptr, type_info.align);
+			print_raw_data(data.address, abi.pointer);
+			co_return;
+		}
+		auto it = visited_pointers.lower_bound(ptr);
+		if (it != visited_pointers.end() && it->first == ptr) {
+			if (!it->second.valid) {
+				std::cout << std::format("{} ({:#x}): invalid pointer {:#x} (first visited: {})\n", name, data.address, ptr, it->second.location);
+				print_raw_data(data.address, abi.pointer);
+			}
+			else if (it->second.type != actual_type) {
+				std::cout << std::format("{} ({:#x}): pointer {:#x} already visited with different type ({}).\n", name, data.address, ptr, it->second.location);
+				print_raw_data(data.address, abi.pointer);
+			}
+			co_return;
+		}
+		it = visited_pointers.emplace_hint(it, ptr, pointer_details{true, actual_type, name});
+		MemoryBuffer item_data(ptr, type_info.size);
+		if (auto err = co_await process.read(item_data)) {
+			it->second.valid = false;
+			std::cout << std::format("{} ({:#x}): invalid pointer {:#x} ({})\n", name, data.address, ptr, err.message());
+			print_raw_data(data.address, abi.pointer);
+			co_return;
+		}
+		if (downcast_type)
+			co_await check_value(std::format("(*{})", name), item_data, *downcast_type);
+		else
+			co_await item_type.visit([
+				this,
+				name = std::format("(*{})", name),
+				data = item_data.view()
+			](const auto &type){
+				return check_value(name, data, type);
+			});
+	}
+
+	cppcoro::task<> check_value(std::string name, MemoryView data, const StaticArray &array)
+	{
+		assert(array.type_params.size() == 1);
+		const auto &item_type = array.itemType();
+		auto type_info = layout.getTypeInfo(item_type);
+		if (type_info.size == 0) // skip missing types
+			co_return;
+		assert(array.extent != StaticArray::NoExtent);
+		std::vector<cppcoro::task<>> tasks;
+		for (std::size_t i = 0; i < array.extent; ++i) {
+			item_type.visit([&, this](const auto &type){
+				tasks.push_back(check_value(
+						std::format("{}[{}]", name, i),
+						data.subview(i * type_info.size, type_info.size),
+						type));
+			});
+		}
+		co_await cppcoro::when_all(std::move(tasks));
+	}
+
+	cppcoro::task<> check_value(std::string name, MemoryView data, const StdContainer &container)
+	{
+		assert(container.type_params.size() == 1);
+		const auto &item_type = container.itemType();
+		auto type_info = layout.getTypeInfo(item_type);
 		if (type_info.size == 0) // skip missing types
 			co_return;
 		const auto &container_info = abi.container_type(container.container_type);
 		switch (container.container_type) {
-		case Container::Type::StdVector: {
+		case StdContainer::StdVector: {
 			auto vec = co_await abi.read_vector(process, data, type_info);
 			if (vec.err) {
 				std::cout << std::format("{} ({:#x}): invalid vector ({})\n", name, data.address,
@@ -204,85 +295,10 @@ struct ObjectChecker
 			}
 			std::vector<cppcoro::task<>> tasks;
 			for (std::size_t i = 0; i < vec.size; ++i) {
-				container.item_type.visit([&, this](const auto &type){
+				item_type.visit([&, this](const auto &type){
 					tasks.push_back(check_value(
 							std::format("{}[{}]", name, i),
 							item_data.view(i * type_info.size, type_info.size),
-							type));
-				});
-			}
-			co_await cppcoro::when_all(std::move(tasks));
-			break;
-		}
-		case Container::Type::Pointer: {
-			if (container.has_bad_pointers)
-				break;
-                        auto ptr = abi.get_pointer(data);
-			if (ptr == 0)
-				co_return;
-                        auto actual_type = container.item_type.get_if<AbstractType>();
-			// down cast class types
-			const Compound *downcast_type = nullptr;
-			auto compound = container.item_type.get_if<Compound>();
-			if (compound && compound->vtable) {
-				uintptr_t vtable = 0;
-				co_await process.read({ptr, {reinterpret_cast<uint8_t *>(&vtable), abi.pointer().size}});
-				auto it = class_from_vtable.find(vtable);
-				if (it == class_from_vtable.end()) {
-					if (show_vtable_errors)
-						std::cout << std::format("{} ({:#x}): unknown vtable {:#x}\n", name, data.address, vtable);
-				}
-				else {
-					actual_type = downcast_type = it->second;
-					type_info = layout.type_info.at(actual_type);
-				}
-			}
-			// check pointer
-			if (ptr % type_info.align != 0) {
-				std::cout << std::format("{} ({:#x}): invalid pointer {:#x} unaligned (required {})\n", name, data.address, ptr, type_info.align);
-				print_raw_data(data.address, container_info);
-				co_return;
-			}
-			auto it = visited_pointers.lower_bound(ptr);
-			if (it != visited_pointers.end() && it->first == ptr) {
-				if (!it->second.valid) {
-					std::cout << std::format("{} ({:#x}): invalid pointer {:#x} (first visited: {})\n", name, data.address, ptr, it->second.location);
-					print_raw_data(data.address, container_info);
-				}
-				else if (it->second.type != actual_type) {
-					std::cout << std::format("{} ({:#x}): pointer {:#x} already visited with different type ({}).\n", name, data.address, ptr, it->second.location);
-					print_raw_data(data.address, container_info);
-				}
-				co_return;
-			}
-			it = visited_pointers.emplace_hint(it, ptr, pointer_details{true, actual_type, name});
-			MemoryBuffer item_data(ptr, type_info.size);
-			if (auto err = co_await process.read(item_data)) {
-				it->second.valid = false;
-				std::cout << std::format("{} ({:#x}): invalid pointer {:#x} ({})\n", name, data.address, ptr, err.message());
-				print_raw_data(data.address, container_info);
-				co_return;
-			}
-			if (downcast_type)
-				co_await check_value(std::format("(*{})", name), item_data, *downcast_type);
-			else
-				co_await container.item_type.visit([
-					this,
-					name = std::format("(*{})", name),
-					data = item_data.view()
-				](const auto &type){
-					return check_value(name, data, type);
-				});
-			break;
-		}
-		case Container::Type::StaticArray: {
-			assert(container.extent != Container::NoExtent);
-			std::vector<cppcoro::task<>> tasks;
-			for (std::size_t i = 0; i < container.extent; ++i) {
-				container.item_type.visit([&, this](const auto &type){
-					tasks.push_back(check_value(
-							std::format("{}[{}]", name, i),
-							data.subview(i * type_info.size, type_info.size),
 							type));
 				});
 			}
@@ -454,4 +470,3 @@ catch (std::exception &e) {
 	std::cerr << std::format("Could not load structures: {}\n", e.what());
 	return -1;
 }
-

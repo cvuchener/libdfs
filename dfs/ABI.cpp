@@ -23,6 +23,8 @@
 #include <regex>
 #include <system_error>
 
+#include "Structures.h"
+
 using namespace dfs;
 
 static constexpr std::size_t MaxStringCapacity = 1000000;
@@ -101,9 +103,31 @@ const ABI &ABI::fromVersionName(std::string_view name)
 		throw std::runtime_error(std::format("Unsupported abi for {}", name));
 }
 
-TypeInfo ABI::optional_info_common(const TypeInfo &item_type_info)
+TypeInfo ABI::container_info_common(StdContainer::Type type, std::span<const TypeInfo> item_type_info)
 {
-	return {item_type_info.align + item_type_info.size, item_type_info.align};
+	switch (type) {
+	case StdContainer::StdOptional:
+		if (item_type_info.size() != 1)
+			throw std::invalid_argument("std::optional requires one type parameter");
+		return {
+			item_type_info.front().align + item_type_info.front().size,
+			item_type_info.front().align
+		};
+	case StdContainer::StdVariant:
+		if (item_type_info.size() >= 1) {
+			using namespace std::ranges;
+			auto size = max_element(item_type_info, {}, &TypeInfo::size)->size;
+			auto align = max_element(item_type_info, {}, &TypeInfo::align)->align;
+			return {
+				align + size,
+				align
+			};
+		}
+		else
+			throw std::invalid_argument("std::variant requires at least one type parameter");
+	default:
+		throw std::invalid_argument("container info does not depends on type parameters");
+	}
 }
 
 template <ABI::Arch arch>
@@ -247,45 +271,57 @@ cppcoro::task<ABI::string_result> ABI::read_string_msvc2015(Process &process, Me
 template cppcoro::task<ABI::string_result> ABI::read_string_msvc2015<ABI::Arch::X86>(Process &, MemoryView);
 template cppcoro::task<ABI::string_result> ABI::read_string_msvc2015<ABI::Arch::AMD64>(Process &, MemoryView);
 
+template <ABI::Arch arch>
+static constexpr TypeInfo PointerInfo = {
+	ABI::pointer_size<arch>(),
+	ABI::pointer_size<arch>()
+};
+
 const ABI ABI::GCC_32 = ABI{ Arch::X86, Compiler::GNU,
 			make_primitive_type_info_gcc<Arch::X86, false>(),
+			PointerInfo<Arch::X86>,
 			make_container_type_info_gcc<Arch::X86, false>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::X86>,
 			read_vector_common<Arch::X86>,
 			read_string_gcc_cow<Arch::X86> };
 const ABI ABI::GCC_64 = ABI{ Arch::AMD64, Compiler::GNU,
 			make_primitive_type_info_gcc<Arch::AMD64, false>(),
+			PointerInfo<Arch::AMD64>,
 			make_container_type_info_gcc<Arch::AMD64, false>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::AMD64>,
 			read_vector_common<Arch::AMD64>,
 			read_string_gcc_cow<Arch::AMD64> };
 const ABI ABI::GCC_CXX11_32 = ABI{ Arch::X86, Compiler::GNU,
 			make_primitive_type_info_gcc<Arch::X86, true>(),
+			PointerInfo<Arch::X86>,
 			make_container_type_info_gcc<Arch::X86, true>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::X86>,
 			read_vector_common<Arch::X86>,
 			read_string_gcc_sso<Arch::X86> };
 const ABI ABI::GCC_CXX11_64 = ABI{ Arch::AMD64, Compiler::GNU,
 			make_primitive_type_info_gcc<Arch::AMD64, true>(),
+			PointerInfo<Arch::AMD64>,
 			make_container_type_info_gcc<Arch::AMD64, true>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::AMD64>,
 			read_vector_common<Arch::AMD64>,
 			read_string_gcc_sso<Arch::AMD64> };
 const ABI ABI::MSVC2015_32 = ABI{ Arch::X86, Compiler::MS,
 			make_primitive_type_info_msvc2015<Arch::X86>(),
+			PointerInfo<Arch::X86>,
 			make_container_type_info_msvc2015<Arch::X86>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::X86>,
 			read_vector_common<Arch::X86>,
 			read_string_msvc2015<Arch::X86> };
 const ABI ABI::MSVC2015_64 = ABI{ Arch::AMD64, Compiler::MS,
 			make_primitive_type_info_msvc2015<Arch::AMD64>(),
+			PointerInfo<Arch::AMD64>,
 			make_container_type_info_msvc2015<Arch::AMD64>(),
-			optional_info_common,
+			container_info_common,
 			read_pointer_common<Arch::AMD64>,
 			read_vector_common<Arch::AMD64>,
 			read_string_msvc2015<Arch::AMD64> };

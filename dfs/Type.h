@@ -80,14 +80,9 @@ struct PrimitiveType: AbstractType
 		StdString,	///< `std::string`
 		StdBitVector,	///< `std::vector<bool>`
 		StdFStream,	///< `std::fstream`
-		StdMap,		///< `std::map<T, U>`
-		StdUnorderedMap,	///< `std::unordered_map<T, U>`
 		StdMutex,	///< `std::mutex`
 		StdConditionVariable,	///< `std::condition_variable`
-		StdFuture,	///< `std::future<T>`
 		StdFunction,	///< `std::function<void()>`
-		DFFlagArray,	///< `struct { uint8_t *bits; uint32_t size; }`
-		DFArray,	///< `struct { T *data; unsigned short size; }`
 		// Type count
 		Count ///< primitive type count
 	} type;
@@ -175,7 +170,7 @@ public:
 	/**
 	 * Constructs a TypeRef to type \p T forwarding \p args.
 	 */
-	template <typename T, typename... Args>
+	template <std::derived_from<AbstractType> T, typename... Args>
 	TypeVariant(std::in_place_type_t<T>, Args &&...args):
 		_ptr(std::in_place_type<TypeRef<T>>, std::forward<Args>(args)...)
 	{
@@ -183,7 +178,7 @@ public:
 	/**
 	 * Constructs a variant owning \p ptr.
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	TypeVariant(std::unique_ptr<T> &&ptr):
 		_ptr(std::move(ptr))
 	{
@@ -193,7 +188,7 @@ public:
 	 * \returns a reference to the contained type if it is convertible to \p T.
 	 * \throws std::bad_variant_access if the contained type is not convertible.
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	T &get() {
 		return std::visit([](const auto &ptr) -> T & {
 			if constexpr (requires { {*ptr} -> std::convertible_to<T &>; })
@@ -206,7 +201,7 @@ public:
 	/**
 	 * \overload
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	const T &get() const {
 		return std::visit([](const auto &ptr) -> const T & {
 			if constexpr (requires { {*ptr} -> std::convertible_to<const T &>; })
@@ -220,7 +215,7 @@ public:
 	 * \returns a pointer to the contained type if it is convertible to \p
 	 * T or \c nullptr otherwise.
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	const T *get_if() const {
 		return std::visit([](const auto &ptr) -> const T * {
 			if constexpr (requires { {ptr.get()} -> std::convertible_to<const T *>; })
@@ -324,7 +319,7 @@ public:
 	 * \returns a reference to the contained type if it is convertible to \p T.
 	 * \throws std::bad_variant_access if the contained type is not convertible.
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	const T &get() const {
 		return std::visit([](const auto *ptr) -> const T & {
 			if constexpr (requires { {*ptr} -> std::convertible_to<const T &>; })
@@ -338,7 +333,7 @@ public:
 	 * \returns a pointer to the contained type if it is convertible to \p
 	 * T or \c nullptr otherwise.
 	 */
-	template <typename T>
+	template <std::derived_from<AbstractType> T>
 	const T *get_if() const {
 		return std::visit([](const auto *ptr) -> const T * {
 			if constexpr (std::convertible_to<decltype(ptr), const T *>)
@@ -364,8 +359,12 @@ public:
 struct Enum;
 struct Bitfield;
 struct Compound;
-struct Container;
 struct Padding;
+struct Container;
+struct PointerType;
+struct StaticArray;
+struct StdContainer;
+struct DFContainer;
 
 /**
  * Container for any type.
@@ -375,7 +374,9 @@ using AnyType = TypeVariant<
 	TypeRef<Enum>, std::unique_ptr<Enum>,
 	TypeRef<Bitfield>, std::unique_ptr<Bitfield>,
 	TypeRef<Compound>, std::unique_ptr<Compound>,
-	TypeRef<Container>, std::unique_ptr<Container>,
+	TypeRef<PointerType>, std::unique_ptr<PointerType>,
+	std::unique_ptr<StaticArray>, std::unique_ptr<StdContainer>,
+	TypeRef<DFContainer>, std::unique_ptr<DFContainer>,
 	std::unique_ptr<Padding>
 >;
 /**
@@ -386,7 +387,10 @@ using AnyTypeRef = TypeRefVariant<
 	Enum,
 	Bitfield,
 	Compound,
-	Container,
+	PointerType,
+	StaticArray,
+	StdContainer,
+	DFContainer,
 	Padding
 >;
 

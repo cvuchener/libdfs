@@ -89,7 +89,7 @@ struct PolymorphicReader
 		if (addr == 0)
 			co_return nullptr;
 		uintptr_t vtable = 0;
-		if (auto err = co_await session.process().read({addr, {reinterpret_cast<uint8_t *>(&vtable), session.abi().pointer().size}}))
+		if (auto err = co_await session.process().read({addr, {reinterpret_cast<uint8_t *>(&vtable), session.abi().pointer.size}}))
 			throw std::system_error(err);
 		vtable -= session.process().base_offset();
 		std::unique_ptr<Base> base_ptr;
