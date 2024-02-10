@@ -133,28 +133,27 @@ std::tuple<AnyTypeRef, std::size_t> MemoryLayout::getOffset(const Compound &base
 		},
 		[&](const path::index &idx) {
 			auto &[type, offset] = res;
-			if (auto container = type.get_if<Container>()) {
-				if (container->container_type != Container::Type::StaticArray)
-					throw std::invalid_argument("index needs a static array");
+			if (auto array = type.get_if<StaticArray>()) {
 				auto i = visit(overloaded{
 					[](std::size_t i) { return i; },
-					[container](std::string_view name) -> std::size_t {
-						if (!container->index_enum)
+					[array](std::string_view name) -> std::size_t {
+						if (!array->index_enum)
 							throw std::invalid_argument("named index on array without index enum");
-						const auto &e = **container->index_enum;
+						const auto &e = **array->index_enum;
 						auto it = e.values.find(name);
 						if (it == e.values.end())
 							throw std::out_of_range("enum value not found");
-						if (it->second.value < 0 || unsigned(it->second.value) >= container->extent)
+						if (it->second.value < 0 || unsigned(it->second.value) >= array->extent)
 							throw std::invalid_argument("invalid index value from enum");
 						return it->second.value;
 					}}, idx);
-				auto item_info = getTypeInfo(container->item_type);
-				offset += i * item_info.size;
-				type = container->item_type;
+				if (array->type_params.empty())
+					throw std::invalid_argument("missing item type for static array");
+				type = array->itemType();
+				offset += i * getTypeInfo(type).size;
 			}
 			else
-				throw std::invalid_argument("index needs a container");
+				throw std::invalid_argument("index needs a static array");
 		}
 	};
 	for (const auto &item: path)

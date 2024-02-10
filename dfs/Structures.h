@@ -108,7 +108,7 @@ public:
 	/**
 	 * \returns the type of the pointer with unknown inner type.
 	 */
-	const Container &genericPointer() const {
+	const PointerType &genericPointer() const {
 		return *generic_pointer;
 	}
 	/**
@@ -156,6 +156,9 @@ public:
 	 */
 	const Bitfield *findBitfield(std::string_view name) const {
 		return find(bitfield_types, name);
+	}
+	const string_map<DFContainer> &allLinkedListTypes() const {
+		 return linked_list_types;
 	}
 	/**
 	 * \returns all global object types mapped by the global object name.
@@ -224,10 +227,11 @@ private:
 
 	// Note: references to types must not be invalidated
 	string_map<PrimitiveType> primitive_types;
-	std::unique_ptr<Container> generic_pointer; // for unknown "pointer" types
+	std::unique_ptr<PointerType> generic_pointer; // for unknown "pointer" types
 	string_map<Compound> compound_types;
 	string_map<Enum> enum_types;
 	string_map<Bitfield> bitfield_types;
+	string_map<DFContainer> linked_list_types;
 	string_map<AnyType> global_objects;
 
 	std::vector<VersionInfo> versions;
@@ -236,6 +240,7 @@ private:
 	std::optional<UnresolvedReferenceError> resolve(TypeRef<Compound> &ref);
 	std::optional<UnresolvedReferenceError> resolve(TypeRef<Enum> &ref);
 	std::optional<UnresolvedReferenceError> resolve(TypeRef<Bitfield> &ref);
+	std::optional<UnresolvedReferenceError> resolve(TypeRef<DFContainer> &ref);
 	std::optional<UnresolvedReferenceError> resolve(AnyType &type, ErrorLog &errors);
 	friend struct PrimitiveType;
 	friend struct Compound;
@@ -255,7 +260,7 @@ AnyTypeRef findChildType(AnyTypeRef type, T &&path)
 	auto find_item = overloaded {
 		[&](const path::identifier &id) {
 			while (auto container = type.get_if<Container>())
-				type = container->item_type;
+				type = container->itemType();
 			if (auto compound = type.get_if<Compound>()) {
 				auto res = compound->searchMember(id.identifier);
 				if (res.empty())
@@ -269,7 +274,7 @@ AnyTypeRef findChildType(AnyTypeRef type, T &&path)
 		},
 		[&](const path::container_of &c) {
 			while (auto container = type.get_if<Container>())
-				type = container->item_type;
+				type = container->itemType();
 			if (auto compound = type.get_if<Compound>()) {
 				auto res = compound->searchMember(c.member);
 				if (res.empty())
@@ -285,7 +290,7 @@ AnyTypeRef findChildType(AnyTypeRef type, T &&path)
 		[&](const path::index &) {
 			if (auto container = type.get_if<Container>()) {
 				// TODO: check index
-				type = container->item_type;
+				type = container->itemType();
 			}
 			else {
 				throw std::invalid_argument("not a container");
@@ -322,7 +327,7 @@ const Compound *Structures::findCompound(T &&path) const
 	if (size(path) > 1) {
 		AnyTypeRef type = findChildType(it->second, path | std::views::drop(1));
 		while (auto container = type.get_if<Container>())
-			type = container->item_type;
+			type = container->itemType();
 		if (auto compound = type.get_if<Compound>())
 			return compound;
 		else

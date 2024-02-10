@@ -83,10 +83,10 @@ public:
 				local_type.name()))
 	{
 	}
-	TypeError(const Container &df_type, const std::type_info &local_type, std::string_view message):
+	TypeError(const StdContainer &df_type, const std::type_info &local_type, std::string_view message):
 		_message(std::format("{} (df: {}, local: {})",
 				message,
-				Container::to_string(df_type.container_type),
+				StdContainer::to_string(df_type.container_type),
 				local_type.name()))
 	{
 	}
@@ -103,7 +103,7 @@ public:
 				message,
 				df_type.visit(overloaded{
 					[](const PrimitiveType &type){return PrimitiveType::to_string(type.type);},
-					[](const Container &type){return Container::to_string(type.container_type);},
+					[](const StdContainer &type){return StdContainer::to_string(type.container_type);},
 					[](const Padding &){return std::string("padding");},
 					[](const auto &type){return type.debug_name;}}),
 				local_type.name()))

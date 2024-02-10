@@ -39,26 +39,33 @@ static const std::set<std::string, std::less<>> ignore_tags = {
 	"extra-include",
 };
 
-static std::string member_debug_name(std::string_view parent_name, std::string_view member_name) {
-	return std::format("{}.{}", parent_name, member_name);
-}
-
 static AnyType make_type(std::string_view debug_name, const xml_node &element, ErrorLog &log)
 {
 	std::string_view tagname = element.name();
 	auto type = element.attribute("type-name");
-	auto container_type = Container::typeFromTagName(tagname);
-	if (tagname == "compound" || tagname == "df-linked-list") {
+	if (tagname == "compound") {
 		if (type)
 			return {type.value()};
 		else
 			return std::make_unique<Compound>(debug_name, element, log);
 	}
-	else if (container_type) {
-		return std::make_unique<Container>(debug_name, *container_type, element, log);
+	else if (tagname == "df-linked-list") {
+		return {std::in_place_type<DFContainer>, type.value()};
+	}
+	else if (auto container_type = StdContainer::typeFromTagName(tagname)) {
+		return std::make_unique<StdContainer>(debug_name, element, log, *container_type);
+	}
+	else if (auto container_type = DFContainer::typeFromTagName(tagname)) {
+		return std::make_unique<DFContainer>(debug_name, element, log, *container_type);
+	}
+	else if (tagname == "pointer") {
+		return std::make_unique<PointerType>(debug_name, element, log);
+	}
+	else if (tagname == "static-array") {
+		return std::make_unique<StaticArray>(debug_name, element, log);
 	}
 	else if (tagname == "static-string") {
-		return std::make_unique<Container>(debug_name, Container::static_string, element);
+		return std::make_unique<StaticArray>(debug_name, StaticArray::static_string, element);
 	}
 	else if (tagname == "padding") {
 		std::size_t size = element.attribute("size").as_ullong(0);
@@ -160,16 +167,6 @@ Compound::Compound(std::string_view debug_name, const xml_node element, ErrorLog
 	}
 }
 
-Compound::Compound(std::string_view debug_name, const xml_node element, ErrorLog &log, linked_list_t):
-	debug_name(debug_name)
-{
-	auto self_type = element.attribute("type-name").value();
-	auto item_type = element.attribute("item-type").value();
-	add_member<Container>("item", Container::Pointer, std::in_place_type<Compound>, item_type);
-	add_member<Container>("prev", Container::Pointer, std::in_place_type<Compound>, self_type);
-	add_member<Container>("next", Container::Pointer, std::in_place_type<Compound>, self_type);
-}
-
 Compound::Compound(std::string_view debug_name, const xml_node element, ErrorLog &log, other_vectors_t):
 	debug_name(debug_name)
 {
@@ -230,20 +227,15 @@ void Compound::OtherVectorsBuilder::operator()(Structures &structures, ErrorLog 
 		}
 		auto it = std::ranges::find(overrides, name, &Compound::Member::name);
 		if (it == overrides.end())
-			compound->add_member<Container>(name, Container::StdVector, std::make_unique<Container>(member_debug_name(compound->debug_name, name), Container::Pointer, default_item_type));
+			compound->addMember<StdContainer>(
+					name,
+					StdContainer::StdVector,
+					std::make_unique<PointerType>(
+						member_debug_name(compound->debug_name, name),
+						default_item_type));
 		else
 			compound->members.push_back(std::move(*it));
 	}
-}
-
-template<typename T, typename String, typename... Args>
-void Compound::add_member(String &&name, Args &&...args)
-{
-	members.emplace_back(
-		std::forward<String>(name),
-		std::in_place_type<T>,
-		member_debug_name(debug_name, name),
-		std::forward<Args>(args)...);
 }
 
 Compound::Member::Member(std::string_view parent_name, std::string_view name, const xml_node element, ErrorLog &log):
@@ -278,3 +270,7 @@ void Compound::resolve(Structures &structures, ErrorLog &log)
 	}
 }
 
+std::string Compound::member_debug_name(std::string_view parent_name, std::string_view member_name)
+{
+	return std::format("{}.{}", parent_name, member_name);
+}

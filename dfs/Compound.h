@@ -71,20 +71,6 @@ struct Compound: AbstractType
 	 */
 	Compound(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, bool vtable = false);
 	/**
-	 * Tag for the linked list constructor.
-	 *
-	 * \sa Compound(std::string_view, const pugi::xml_node, ErrorLog &, linked_list_t)
-	 */
-	static constexpr struct linked_list_t {} linked_list = {};
-	/**
-	 * Constructs a linked list compound (from a `<df-linked-list-type>` element).
-	 *
-	 * \param[in] debug_name used for debugging/logging
-	 * \param[in] element xml element to parse
-	 * \param[in,out] log any error occuring while parsing this element is logged
-	 */
-	Compound(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, linked_list_t);
-	/**
 	 * Tag for the "other vectors" constructor.
 	 *
 	 * \sa Compound(std::string_view, const pugi::xml_node, ErrorLog &, other_vectors_t)
@@ -161,7 +147,22 @@ struct Compound: AbstractType
 	int methodIndex(const String &name) const;
 
 	template<typename T, typename String, typename... Args>
-	void add_member(String &&name, Args &&...args);
+	void addMember(String &&name, Args &&...args)
+	{
+		if constexpr (std::same_as<T, PrimitiveType>) {
+			members.emplace_back(
+				std::forward<String>(name),
+				std::in_place_type<T>,
+				std::forward<Args>(args)...);
+		}
+		else {
+			members.emplace_back(
+				std::forward<String>(name),
+				std::in_place_type<T>,
+				member_debug_name(debug_name, name),
+				std::forward<Args>(args)...);
+		}
+	}
 
 	struct OtherVectorsBuilder
 	{
@@ -176,6 +177,8 @@ struct Compound: AbstractType
 	};
 
 	void resolve(Structures &structures, ErrorLog &log);
+
+	static std::string member_debug_name(std::string_view parent_name, std::string_view member_name);
 };
 
 /**

@@ -37,7 +37,7 @@ struct compute_info_t {
 	std::unordered_map<const Compound *, CompoundLayout> &compound_layout;
 	const ABI &abi;
 	std::set<const Compound *> in_progress;
-	std::set<std::variant<const PrimitiveType *, const Enum *, const Bitfield *, const Compound *, const Container *>> unvisited;
+	std::set<std::variant<const PrimitiveType *, const Enum *, const Bitfield *, const Compound *, const PointerType *, const StaticArray *, const StdContainer *, const DFContainer *>> unvisited;
 
 	void do_later(const AnyType &type) {
 		type.visit([this](const auto &type){
@@ -105,7 +105,7 @@ struct compute_info_t {
 			align = parent.info.align;
 		}
 		else if (compound.vtable) {
-			const auto &pointer = abi.pointer();
+			const auto &pointer = abi.pointer;
 			offset = pointer.size;
 			align = pointer.align;
 		}
@@ -125,24 +125,45 @@ struct compute_info_t {
 		in_progress.erase(in_progress_it);
 		return { add_info(&compound, computeAlign(layout.unaligned_size, align), align), &layout };
 	}
-	return_type operator()(const Container &container) {
-		switch (container.container_type) {
-		case Container::StaticArray: {
-			auto item_info = get_info(container.item_type).info;
-			unvisited.erase(&container);
-			return {add_info(&container, container.extent * item_info.size, item_info.align)};
+	return_type operator()(const PointerType &pointer) {
+		for (const auto &type: pointer.type_params) {
+			if (type.visit([this](const auto &type){ return !type_info.contains(&type); }))
+				do_later(type);
 		}
-		case Container::StdOptional: {
-			auto item_info = get_info(container.item_type).info;
+		unvisited.erase(&pointer);
+		return {add_info(&pointer, abi.pointer)};
+	}
+	return_type operator()(const StaticArray &array) {
+		auto item_info = get_info(array.itemType()).info;
+		unvisited.erase(&array);
+		return {add_info(&array, array.extent * item_info.size, item_info.align)};
+	}
+	return_type operator()(const StdContainer &container) {
+		if (StdContainer::requiresCompleteTypes(container.container_type)) {
+			std::vector<TypeInfo> item_info;
+			item_info.reserve(container.type_params.size());
+			for (const auto &type: container.type_params)
+				item_info.push_back(get_info(type).info);
 			unvisited.erase(&container);
-			return {add_info(&container, abi.optional_info(item_info))};
+			return {add_info(&container, abi.container_info(container.container_type, item_info))};
 		}
-		default:
-			if (container.item_type.visit([this](const auto &type){ return !type_info.contains(&type); }))
-				do_later(container.item_type);
+		else {
+			for (const auto &type: container.type_params) {
+				if (type.visit([this](const auto &type){ return !type_info.contains(&type); }))
+					do_later(type);
+			}
 			unvisited.erase(&container);
 			return {add_info(&container, abi.container_type(container.container_type))};
 		}
+	}
+	return_type operator()(const DFContainer &container) {
+		for (const auto &type: container.type_params) {
+			if (type.visit([this](const auto &type){ return !type_info.contains(&type); }))
+				do_later(type);
+		}
+		auto compound_info = get_info(*container.compound).info;
+		unvisited.erase(&container);
+		return {add_info(&container, compound_info)};
 	}
 };
 
@@ -160,6 +181,8 @@ MemoryLayout::MemoryLayout(const Structures &structures, const ABI &abi)
 		compute_info.unvisited.insert(&type);
 	for (const auto &[name, type]: structures.allCompoundTypes())
 		compute_info.unvisited.insert(&type);
+	for (const auto &[name, type]: structures.allLinkedListTypes())
+		compute_info.unvisited.insert(&type);
 	// Add global object types if not already inserted (named)
 	for (const auto &[name, type]: structures.allGlobalObjects())
 		compute_info.do_later(type);
@@ -169,4 +192,3 @@ MemoryLayout::MemoryLayout(const Structures &structures, const ABI &abi)
 		visit([&](const auto *ptr){compute_info(*ptr);}, ptr);
 	}
 }
-

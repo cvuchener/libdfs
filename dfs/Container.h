@@ -44,14 +44,107 @@ struct Container: AbstractType
 	 */
 	std::string debug_name;
 
+	/**
+	 * Constructs a container with an item type constructed from \p args.
+	 */
+	template<typename... Args>
+	Container(std::string_view debug_name, Args &&...args):
+		debug_name(debug_name)
+	{
+		type_params.emplace_back(std::forward<Args>(args)...);
+	}
+
+	/**
+	 * Constructs a container from xml.
+	 *
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
+	 * \param[in] log any error occuring while parsing this element is logged
+	 * \param[in] pointer_recurse when parsing again the same xml element
+	 * for a container of pointers
+	 */
+	Container(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, bool pointer_recurse = false);
+
+	const AnyType &itemType() const {
+		if (type_params.empty())
+			throw std::runtime_error("Missing container item type");
+		return type_params.front();
+	}
+
+	/**
+	 * Parse a string as an index for this container.
+	 *
+	 * If this container is indexed by an enum, enum value name will be
+	 * converted. For any container, numbers are parsed.
+	 *
+	 * If the string is neither a enum value name or a number
+	 * `std::nullopt` is returned.
+	 */
+	std::optional<int> parseIndex(std::string_view index) const;
+
+	/**
+	 * Type of the contained items.
+	 */
+	std::vector<AnyType> type_params;
+	/**
+	 * If the container is indexed by a enum, a reference to it.
+	 */
+	std::optional<TypeRef<Enum>> index_enum;
+	/**
+	 * This container of pointer may contains invalid pointers.
+	 */
+	bool has_bad_pointers = false;
+
+	void resolve(Structures &structures, ErrorLog &log);
+};
+
+struct PointerType: Container
+{
+	PointerType();
+	template <typename... Args>
+	PointerType(std::string_view debug_name, Args &&... args):
+		Container(debug_name, std::forward<Args>(args)...)
+	{
+	}
+	PointerType(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log);
+
+	bool is_array = false;
+};
+
+struct StaticArray: Container
+{
+	StaticArray(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log);
+	/**
+	 * Tag for the static string constructor.
+	 *
+	 * \sa Container(std::string_view, static_string_t, const pugi::xml_node)
+	 */
+	static inline struct static_string_t {} static_string;
+	/**
+	 * Constructs a static string from xml.
+	 */
+	StaticArray(std::string_view debug_name, static_string_t, const pugi::xml_node element);
+	static inline constexpr std::size_t NoExtent = -1;
+	/**
+	 * Extent of the array if possible, NoExtent when not applicable.
+	 */
+	std::size_t extent = NoExtent;
+
+	void resolve(Structures &structures, ErrorLog &log);
+};
+
+struct StdContainer: Container
+{
 	enum Type {
-		Pointer,	///< `T *`
 		StdSharedPtr,	///< `std::shared_ptr<T>`
 		StdVector,	///< `std::vector<T>`
 		StdDeque,	///< `std::deque<T>`
 		StdSet,		///< `std::set<T>`
 		StdOptional,	///< `std::optional<T>`
-		StaticArray,	///< `T[extent]`
+		StdMap,		///< `std::map<T, U>`
+		StdUnorderedMap,	///< `std::unordered_map<T, U>`
+		StdFuture,	///< `std::future<T>`
+		StdVariant,	///< `std::variant<Ts...>`
 		// Type count
 		Count	///< container type count
 	} container_type;
@@ -68,76 +161,81 @@ struct Container: AbstractType
 	 */
 	static std::string to_string(Type type);
 
+	static constexpr bool requiresCompleteTypes(Type type)
+	{
+		switch (type) {
+		case StdOptional:
+		case StdVariant:
+			return true;
+		default:
+			return false;
+		}
+	}
 
 	/**
 	 * Constructs a container from xml.
 	 *
 	 * \param[in] debug_name used for debugging/logging
-	 * \param[in] container_type
 	 * \param[in] element xml element to parse
 	 * \param[in] log any error occuring while parsing this element is logged
-	 * \param[in] pointer_recurse when parsing again the same xml element
-	 * for a container of pointers
+	 * \param[in] type of the std container
 	 */
-	Container(std::string_view debug_name, Type container_type, const pugi::xml_node element, ErrorLog &log, bool pointer_recurse = false);
-	/**
-	 * Tag for the static string constructor.
-	 *
-	 * \sa Container(std::string_view, static_string_t, const pugi::xml_node)
-	 */
-	static inline struct static_string_t {} static_string;
-	/**
-	 * Constructs a static string from xml.
-	 */
-	Container(std::string_view debug_name, static_string_t, const pugi::xml_node element);
-	/**
-	 * Constructs a container for type \p container_type with an item type constructed from \p args.
-	 */
-	template<typename... Args>
-	Container(std::string_view debug_name, Type container_type, Args &&...args):
-		debug_name(debug_name),
-		container_type(container_type),
-		item_type(std::forward<Args>(args)...)
+	StdContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, Type container_type);
+	template <typename... Args>
+	StdContainer(std::string_view debug_name, Type container_type, Args &&... args):
+		Container(debug_name, std::forward<Args>(args)...),
+		container_type(container_type)
 	{
 	}
+};
+
+struct DFContainer: Container
+{
+	enum Type {
+		DFFlagArray,	///< `struct { uint8_t *bits; uint32_t size; }`
+		DFArray,	///< `struct { T *data; unsigned short size; }`
+		DFLinkedList,	///< `struct linked_list_t {
+				///<     T *item;
+				///<     linked_list_t<T> *prev;
+				///<     linked_list_t<T> *next;
+				///< }`
+		// Type count
+		Count	///< container type count
+	} container_type;
+
+	static string_map<Type> TypeNames; ///< maps xml element names to enum values
+	/**
+	 * Find the type for a xml element tag name.
+	 *
+	 * \sa TypeNames
+	 */
+	static std::optional<Type> typeFromTagName(std::string_view name);
+	/**
+	 * \returns xml tag name corresponding to \p type or `"invalid"`
+	 */
+	static std::string to_string(Type type);
+
+	std::unique_ptr<Compound> compound;
 
 	/**
-	 * Get the item compound type.
+	 * Constructs a container from xml.
 	 *
-	 * This function recurses for containers of containers and looks for
-	 * the inner item type.
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
+	 * \param[in] log any error occuring while parsing this element is logged
+	 * \param[in] type of the DF container
+	 */
+	DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, Type container_type);
+	static inline struct linked_list_t {} linked_list;
+	/**
+	 * Constructs a container from xml.
 	 *
-	 * \returns a compound type or `nullptr` if the item type is not a compound.
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
+	 * \param[in] log any error occuring while parsing this element is logged
+	 * \param[in] type of the DF container
 	 */
-	const Compound *itemCompound() const;
-	/**
-	 * Parse a string as an index for this container.
-	 *
-	 * If this container is indexed by an enum, enum value name will be
-	 * converted. For any container, numbers are parsed.
-	 *
-	 * If the string is neither a enum value name or a number
-	 * `std::nullopt` is returned.
-	 */
-	std::optional<int> parseIndex(std::string_view index) const;
-
-	/**
-	 * Type of the contained items.
-	 */
-	AnyType item_type;
-	/**
-	 * If the container is indexed by a enum, a reference to it.
-	 */
-	std::optional<TypeRef<Enum>> index_enum;
-	static inline constexpr std::size_t NoExtent = -1;
-	/**
-	 * Extent of the array if possible, NoExtent when not applicable.
-	 */
-	std::size_t extent = NoExtent;
-	/**
-	 * This container of pointer may contains invalid pointers.
-	 */
-	bool has_bad_pointers = false;
+	DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, linked_list_t);
 
 	void resolve(Structures &structures, ErrorLog &log);
 };

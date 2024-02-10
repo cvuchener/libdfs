@@ -46,7 +46,7 @@ struct integral_like<std::chrono::duration<Rep, Period>>: std::true_type {};
  * Reader for integral and integral-like types.
  *
  * It accepts any integral primitive type (including enums and bitfields) and
- * Container::Pointer container (the address is used as an integral value).
+ * PointerType container (the address is used as an integral value).
  *
  * \ingroup readers
  */
@@ -83,16 +83,11 @@ public:
 					throw TypeError(*primitive_type, typeid(T), "not an integral type");
 				}
 			}
-			else if (auto container = type.get_if<Container>()) {
-				switch (container->container_type) {
-				case Container::Pointer:
-					if constexpr (!std::is_same_v<T, uintptr_t>)
-						throw TypeError(*container, typeid(T), "pointer requires uintptr_t");
-					else
-						return false;
-				default:
-					throw TypeError(*container, typeid(T), "incompatible type");
-				}
+			else if (auto pointer = type.get_if<PointerType>()) {
+				if constexpr (!std::is_same_v<T, uintptr_t>)
+					throw TypeError(*pointer, typeid(T), "pointer requires uintptr_t");
+				else
+					return false;
 			}
 			else
 				throw TypeError(type, typeid(T), "incompatible type");
@@ -214,52 +209,73 @@ public:
 template <std::derived_from<std::vector<bool>> T>
 class ItemReader<T>
 {
-	const PrimitiveType &_primitive_type;
-	std::size_t _size;
+	AnyTypeRef _type;
+	struct {
+		const CompoundLayout *compound;
+		std::size_t size;
+	} _layout;
 
 public:
 	using output_type = T;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
-		_primitive_type([&]() -> const PrimitiveType & {
+		_type(type),
+		_layout([&]() -> decltype(_layout) {
 			if (auto primitive_type = type.get_if<PrimitiveType>()) {
+				auto type_info = factory.abi.primitive_type(primitive_type->type);
 				switch (primitive_type->type) {
 				case PrimitiveType::StdBitVector:
-				case PrimitiveType::DFFlagArray:
-					return *primitive_type;
+					return { nullptr, type_info.size };
+				default:
+					throw TypeError(*primitive_type, typeid(std::string), "not a bit vector type");
+				}
+			}
+			else if (auto container = type.get_if<DFContainer>()) {
+				auto type_info = factory.layout.getTypeInfo(*container);
+				const auto &layout = factory.layout.compound_layout.at(container->compound.get());
+				switch (container->container_type) {
+				case DFContainer::DFFlagArray:
+					return { &layout, type_info.size };
 				default:
 					throw TypeError(*primitive_type, typeid(std::string), "not a bit vector type");
 				}
 			}
 			else
 				throw TypeError(type, typeid(std::string), "not a primitive type");
-		}()),
-		_size(factory.abi.primitive_type(_primitive_type.type).size)
+		}())
 	{
 	}
 
 	std::size_t size() const {
-		return _size;
+		return _layout.size;
 	}
 
 	cppcoro::task<> operator()(ReadSession &session, MemoryView data, std::vector<bool> &out) const
 	{
-		switch (_primitive_type.type) {
-		case PrimitiveType::StdBitVector:
-			throw std::system_error(ItemReaderError::NotImplemented);
-		case PrimitiveType::DFFlagArray: {
-			uintptr_t addr = session.abi().get_pointer(data);
-			uint32_t len = session.abi().get_integer<uint32_t>(data.subview(session.abi().pointer().size));
-			MemoryBuffer data(addr, len);
-			if (auto err = co_await session.process().read(data))
-				throw std::system_error(err);
-			out.resize(len*8);
-			for (unsigned int i = 0; i < len*8; ++i)
-				out[i] = data[i/8] & (1<<(i%8));
-			break;
+		if (auto primitive_type = _type.get_if<PrimitiveType>()) {
+			switch (primitive_type->type) {
+			case PrimitiveType::StdBitVector:
+			default:
+				throw std::system_error(ItemReaderError::NotImplemented);
+			}
 		}
-		default:
-			throw std::system_error(ItemReaderError::NotImplemented);
+		else if (auto container = _type.get_if<DFContainer>()) {
+			const auto &offsets = _layout.compound->member_offsets;
+			switch (container->container_type) {
+			case DFContainer::DFFlagArray: {
+				uintptr_t addr = session.abi().get_pointer(data.subview(offsets.at(0)));
+				uint32_t len = session.abi().get_integer<uint32_t>(data.subview(offsets.at(1)));
+				MemoryBuffer data(addr, len);
+				if (auto err = co_await session.process().read(data))
+					throw std::system_error(err);
+				out.resize(len*8);
+				for (unsigned int i = 0; i < len*8; ++i)
+					out[i] = data[i/8] & (1<<(i%8));
+				break;
+			}
+			default:
+				throw std::system_error(ItemReaderError::NotImplemented);
+			}
 		}
 	}
 
@@ -268,14 +284,14 @@ public:
 /**
  * Reader for `std::vector` (except `std::vector<bool>`).
  *
- * It accepts Container::StdVector container.
+ * It accepts StdContainer::StdVector container.
  *
  * \ingroup readers
  */
 template <typename T> requires (!std::is_same_v<T, bool>)
 class ItemReader<std::vector<T>>
 {
-	const Container &_container;
+	const StdContainer &_container;
 	std::size_t _size;
 	TypeInfo _item_info;
 	ItemReader<T> _item_reader;
@@ -284,18 +300,20 @@ public:
 	using output_type = std::vector<T>;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
-		_container([&]() -> const Container & {
-			if (auto container = type.get_if<Container>()) {
-				if (container->container_type != Container::StdVector)
+		_container([&]() -> const StdContainer & {
+			if (auto container = type.get_if<StdContainer>()) {
+				if (container->container_type != StdContainer::StdVector)
 					throw TypeError(*container, typeid(std::vector<T>), "incompatible container");
+				if (container->type_params.size() != 1)
+					throw std::invalid_argument("StdVector requires 1 type parameter");
 				return *container;
 			}
 			else
 				throw TypeError(type, typeid(std::vector<T>), "not a container");
 		}()),
 		_size(factory.abi.container_type(_container.container_type).size),
-		_item_info(factory.layout.getTypeInfo(_container.item_type)),
-		_item_reader(factory, _container.item_type)
+		_item_info(factory.layout.getTypeInfo(_container.itemType())),
+		_item_reader(factory, _container.itemType())
 	{
 	}
 
@@ -306,7 +324,7 @@ public:
 	template <std::ranges::random_access_range... Args> requires ReadableType<T, std::ranges::range_value_t<Args>...>
 	cppcoro::task<> operator()(ReadSession &session, MemoryView data, std::vector<T> &out, Args &&...args) const
 	{
-		if (_container.container_type == Container::StdVector) {
+		if (_container.container_type == StdContainer::StdVector) {
 			auto vec_info = co_await session.abi().read_vector(session.process(), data, _item_info);
 			if (vec_info.err)
 				throw std::system_error(vec_info.err);
@@ -337,14 +355,14 @@ public:
 /**
  * Reader for `std::array`.
  *
- * It accepts Container::StaticArray with matching extent.
+ * It accepts StaticArray with matching extent.
  *
  * \ingroup readers
  */
 template <typename T, std::size_t N>
 class ItemReader<std::array<T, N>>
 {
-	const Container &_container;
+	const StaticArray &_array;
 	TypeInfo _item_info;
 	ItemReader<T> _item_reader;
 
@@ -352,19 +370,19 @@ public:
 	using output_type = std::array<T, N>;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
-		_container([&]() -> const Container & {
-			if (auto container = type.get_if<Container>()) {
-				if (container->container_type != Container::StaticArray)
-					throw TypeError(*container, typeid(output_type), "invalid container type");
-				if (container->extent != N)
-					throw TypeError(*container, typeid(output_type), "invalid array size");
-				return *container;
+		_array([&]() -> const StaticArray & {
+			if (auto array = type.get_if<StaticArray>()) {
+				if (array->extent != N)
+					throw TypeError(*array, typeid(output_type), "invalid array size");
+				if (array->type_params.size() != 1)
+					throw std::invalid_argument("StaticArray requires 1 type parameter");
+				return *array;
 			}
 			else
-				throw TypeError(type, typeid(output_type), "not a container");
+				throw TypeError(type, typeid(output_type), "not a static array");
 		}()),
-		_item_info(factory.layout.getTypeInfo(_container.item_type)),
-		_item_reader(factory, _container.item_type)
+		_item_info(factory.layout.getTypeInfo(_array.itemType())),
+		_item_reader(factory, _array.itemType())
 	{
 	}
 
@@ -502,14 +520,14 @@ class PointerReader
 {
 public:
 	PointerReader(ReaderFactory &factory, AnyTypeRef type):
-		container([&]() -> const Container & {
-			if (auto container = type.get_if<Container>()) {
-				if (container->container_type != Container::Pointer)
-					throw TypeError(*container, typeid(T *), "not a pointer");
-				return *container;
+		pointer([&]() -> const PointerType & {
+			if (auto pointer = type.get_if<PointerType>()) {
+				if (pointer->type_params.size() != 1)
+					throw std::invalid_argument("PointerType requires 1 type parameter");
+				return *pointer;
 			}
 			else
-				throw TypeError(type, typeid(T *), "not a container");
+				throw TypeError(type, typeid(T *), "not a pointer");
 		}())
 	{
 	}
@@ -520,7 +538,7 @@ public:
 	virtual cppcoro::task<std::shared_ptr<T>> make_shared(ReadSession &session, uintptr_t addr) const = 0;
 
 protected:
-	const Container &container;
+	const PointerType &pointer;
 
 	template <typename Base>
 	cppcoro::task<std::shared_ptr<T>> make_shared_impl(ReadSession &session, uintptr_t addr) const
@@ -551,8 +569,8 @@ class StaticPointerReader: public PointerReader<T>
 public:
 	StaticPointerReader(ReaderFactory &factory, AnyTypeRef type):
 		PointerReader<T>(factory, type),
-		_item_info(factory.layout.getTypeInfo(this->container.item_type)),
-		_item_reader(factory, this->container.item_type)
+		_item_info(factory.layout.getTypeInfo(this->pointer.itemType())),
+		_item_reader(factory, this->pointer.itemType())
 	{
 	}
 
@@ -659,7 +677,7 @@ public:
 			else
 				return std::make_unique<StaticPointerReader<T>>(factory, type);
 		}()),
-		_size(factory.abi.pointer().size)
+		_size(factory.abi.pointer.size)
 	{
 	}
 

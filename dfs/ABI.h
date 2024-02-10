@@ -96,16 +96,15 @@ struct ABI
 	 */
 	std::array<TypeInfo, PrimitiveType::Count> primitive_types;
 	/**
-	 * Container type information.
+	 * Pointer type information.
 	 */
-	std::array<TypeInfo, Container::Count> container_types;
-
+	TypeInfo pointer;
 	/**
-	 * \returns pointer type information
+	 * Container type information if the container does not require
+	 * complete type parameter.
 	 */
-	const TypeInfo &pointer() const {
-		return container_types[Container::Pointer];
-	}
+	std::array<TypeInfo, StdContainer::Count> std_container_types;
+
 	/**
 	 * \returns primitive type information
 	 */
@@ -115,15 +114,16 @@ struct ABI
 	/**
 	 * \returns container type information
 	 */
-	const TypeInfo &container_type(Container::Type type) const {
-		return container_types[type];
+	const TypeInfo &container_type(StdContainer::Type type) const {
+		return std_container_types[type];
 	}
 
 	/**
-	 * Type information for a `std::optional` containing an item whose type
-	 * information is \p item_type_info.
+	 * Type information for std container types that require complete type.
+	 *
+	 * Information about parameter type is given as \p item_type_info.
 	 */
-	TypeInfo (*optional_info)(const TypeInfo &item_type_info);
+	TypeInfo (*container_info)(StdContainer::Type type, std::span<const TypeInfo> item_type_info);
 
 	/**
 	 * Parse an integer of type \p T from raw data \p data.
@@ -225,30 +225,27 @@ struct ABI
 			: TypeInfo{p, p};
 		info[PrimitiveType::StdBitVector] = {5*p, p};
 		info[PrimitiveType::StdFStream] = {61*p+40, p};
-		info[PrimitiveType::StdMap] = {6*p, p};
-		info[PrimitiveType::StdUnorderedMap] = {7*p, p};
 		info[PrimitiveType::StdMutex] = {4*p+8, p};
 		info[PrimitiveType::StdConditionVariable] = {48, p};
-		info[PrimitiveType::StdFuture] = {2*p, p};
 		info[PrimitiveType::StdFunction] = {4*p, p};
-		info[PrimitiveType::DFFlagArray] = {2*p, p};
-		info[PrimitiveType::DFArray] = {2*p, p};
 		return info;
 	}
 
 
 	template <Arch arch, bool cxx11>
-	static constexpr std::array<TypeInfo, Container::Count> make_container_type_info_gcc()
+	static constexpr std::array<TypeInfo, StdContainer::Count> make_container_type_info_gcc()
 	{
 		auto p = pointer_size<arch>();
-		std::array<TypeInfo, Container::Count> info;
-		info[Container::Pointer] = {p, p};
-		info[Container::StdSharedPtr] = {2*p, p};
-		info[Container::StdVector] = {3*p, p};
-		info[Container::StdDeque] = cxx11
+		std::array<TypeInfo, StdContainer::Count> info;
+		info[StdContainer::StdSharedPtr] = {2*p, p};
+		info[StdContainer::StdVector] = {3*p, p};
+		info[StdContainer::StdDeque] = cxx11
 			? TypeInfo{10*p, p}
 			: TypeInfo{3*p, p};
-		info[Container::StdSet] = {6*p, p};
+		info[StdContainer::StdSet] = {6*p, p};
+		info[StdContainer::StdMap] = {6*p, p};
+		info[StdContainer::StdUnorderedMap] = {7*p, p};
+		info[StdContainer::StdFuture] = {2*p, p};
 		return info;
 	}
 
@@ -268,31 +265,28 @@ struct ABI
 		info[PrimitiveType::StdString] = {2*p+16, p};
 		info[PrimitiveType::StdBitVector] = {4*p, p};
 		info[PrimitiveType::StdFStream] = {22*p+104, 8};
-		info[PrimitiveType::StdMap] = {2*p, p};
-		info[PrimitiveType::StdUnorderedMap] = {8*p, p};
 		info[PrimitiveType::StdMutex] = {8*p+16, p};
 		info[PrimitiveType::StdConditionVariable] = {8*p+8, p};
-		info[PrimitiveType::StdFuture] = {2*p, p};
 		info[PrimitiveType::StdFunction] = {6*p+16, 8};
-		info[PrimitiveType::DFFlagArray] = {2*p, p};
-		info[PrimitiveType::DFArray] = {2*p, p};
 		return info;
 	}
 
 	template <Arch arch>
-	static constexpr std::array<TypeInfo, Container::Count> make_container_type_info_msvc2015()
+	static constexpr std::array<TypeInfo, StdContainer::Count> make_container_type_info_msvc2015()
 	{
 		auto p = pointer_size<arch>();
-		std::array<TypeInfo, Container::Count> info;
-		info[Container::Pointer] = {p, p};
-		info[Container::StdSharedPtr] = {2*p, p};
-		info[Container::StdVector] = {3*p, p};
-		info[Container::StdDeque] = {5*p, p};
-		info[Container::StdSet] = {2*p, p};
+		std::array<TypeInfo, StdContainer::Count> info;
+		info[StdContainer::StdSharedPtr] = {2*p, p};
+		info[StdContainer::StdVector] = {3*p, p};
+		info[StdContainer::StdDeque] = {5*p, p};
+		info[StdContainer::StdSet] = {2*p, p};
+		info[StdContainer::StdMap] = {2*p, p};
+		info[StdContainer::StdUnorderedMap] = {8*p, p};
+		info[StdContainer::StdFuture] = {2*p, p};
 		return info;
 	}
 
-	static TypeInfo optional_info_common(const TypeInfo &);
+	static TypeInfo container_info_common(StdContainer::Type, std::span<const TypeInfo>);
 
 	template <Arch arch>
 	static uintptr_t read_pointer_common(const uint8_t *);

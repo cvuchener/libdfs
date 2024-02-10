@@ -42,11 +42,11 @@ Structures::Structures(fs::path df_structures_path, Logger logger)
 	// Create built-in primitive types
 	for (auto [name, type]: PrimitiveType::TypeNames)
 		primitive_types.emplace(name, type);
-	generic_pointer = std::make_unique<Container>("pointer", Container::Pointer, std::make_unique<Compound>());
+	generic_pointer = std::make_unique<PointerType>();
 
 	std::regex df_types_xml("df\\..*\\.xml");
 
-	auto add_type = [this, &log]<typename T, typename... Args>(
+	auto add_type = [&log]<typename T, typename... Args>(
 			const xml_node element,
 			string_map<T> &types,
 			Args &&... args)
@@ -89,7 +89,7 @@ Structures::Structures(fs::path df_structures_path, Logger logger)
 			else if (tagname == "class-type")
 				add_type(element, compound_types, true);
 			else if (tagname == "df-linked-list-type")
-				add_type(element, compound_types, Compound::linked_list);
+				add_type(element, linked_list_types, DFContainer::linked_list);
 			else if (tagname == "df-other-vectors-type") {
 				auto *c = add_type(element, compound_types, Compound::other_vectors);
 				other_vectors_builders.emplace_back(element, c, log);
@@ -120,6 +120,8 @@ Structures::Structures(fs::path df_structures_path, Logger logger)
 	for (auto &[name, type]: enum_types)
 		type.resolve(*this, log);
 	for (auto &[name, type]: compound_types)
+		type.resolve(*this, log);
+	for (auto &[name, type]: linked_list_types)
 		type.resolve(*this, log);
 
 	// Read symbols
@@ -201,6 +203,13 @@ std::optional<UnresolvedReferenceError> Structures::resolve(TypeRef<Bitfield> &r
 	return std::nullopt;
 }
 
+std::optional<UnresolvedReferenceError> Structures::resolve(TypeRef<DFContainer> &ref)
+{
+	if (!(ref._ptr = find(linked_list_types, ref._name)))
+		return UnresolvedReferenceError{ref._name};
+	return std::nullopt;
+}
+
 template <typename T>
 concept needs_resolving = requires (T &t, Structures &s, ErrorLog &l) { t.resolve(s, l); };
 
@@ -220,8 +229,10 @@ std::optional<UnresolvedReferenceError> Structures::resolve(AnyType &type, Error
 				type._ptr = TypeRef<Enum>{std::move(name), ptr};
 			else if (auto ptr = find(bitfield_types, name))
 				type._ptr = TypeRef<Bitfield>{std::move(name), ptr};
+			else if (auto ptr = find(linked_list_types, name))
+				type._ptr = TypeRef<DFContainer>{std::move(name), ptr};
 			else if (name == "pointer")
-				type._ptr = TypeRef<Container>{std::move(name), generic_pointer.get()};
+				type._ptr = TypeRef<PointerType>{std::move(name), generic_pointer.get()};
 			else
 				return UnresolvedReferenceError{ref.name};
 			return std::nullopt;
