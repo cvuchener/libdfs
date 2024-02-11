@@ -153,14 +153,18 @@ Structures::Structures(fs::path df_structures_path, Logger logger)
 					}
 				}
 				else if (tagname == "global-address") {
-					vi.global_addresses.emplace(
+					auto [it, inserted] = vi.global_addresses.emplace(
 							element.attribute("name").value(),
 							element.attribute("value").as_ullong());
+					if (!inserted)
+						log.error(element, "Duplicate global-address for {}", it->first);
 				}
 				else if (tagname == "vtable-address") {
-					vi.vtables_addresses.emplace(
+					auto [it, inserted] = vi.vtables_addresses.emplace(
 							element.attribute("name").value(),
 							element.attribute("value").as_ullong());
+					if (!inserted)
+						log.error(element, "Duplicate vtable-address for {}", it->first);
 				}
 				else {
 					log.error(element, "Unknown element {} in symbol-table", tagname);
