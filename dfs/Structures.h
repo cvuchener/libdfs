@@ -157,6 +157,9 @@ public:
 	const Bitfield *findBitfield(std::string_view name) const {
 		return find(bitfield_types, name);
 	}
+	/**
+	 * \returns all linked list node types mapped by name.
+	 */
 	const string_map<DFContainer> &allLinkedListTypes() const {
 		 return linked_list_types;
 	}

@@ -86,7 +86,7 @@ std::optional<int> Container::parseIndex(std::string_view index) const
 }
 
 PointerType::PointerType():
-	Container("generic_pointer", std::make_unique<Compound>())
+	Container("generic_pointer")
 {
 }
 

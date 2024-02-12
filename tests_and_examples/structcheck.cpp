@@ -175,6 +175,8 @@ struct ObjectChecker
 
 	cppcoro::task<> check_value(std::string name, MemoryView data, const PointerType &pointer)
 	{
+		if (pointer.type_params.empty()) // unknown type pointers
+			co_return;
 		assert(pointer.type_params.size() == 1);
 		const auto &item_type = pointer.itemType();
 		auto type_info = layout.getTypeInfo(item_type);

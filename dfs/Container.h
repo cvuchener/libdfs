@@ -33,7 +33,10 @@ class ErrorLog;
 class Structures;
 
 /**
- * Container types can contain any number of object of a same type.
+ * Template types (usually containers).
+ *
+ * It can have any number of parameter type. It also contains optional
+ * information about containers (`index_enum`, `has_bad_pointers`).
  *
  * \ingroup types
  */
@@ -45,9 +48,17 @@ struct Container: AbstractType
 	std::string debug_name;
 
 	/**
+	 * Constructs a container with no item type.
+	 */
+	Container(std::string_view debug_name):
+		debug_name(debug_name)
+	{
+	}
+
+	/**
 	 * Constructs a container with an item type constructed from \p args.
 	 */
-	template<typename... Args>
+	template<typename... Args> requires (sizeof...(Args) > 0)
 	Container(std::string_view debug_name, Args &&...args):
 		debug_name(debug_name)
 	{
@@ -65,6 +76,10 @@ struct Container: AbstractType
 	 */
 	Container(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, bool pointer_recurse = false);
 
+	/**
+	 * \returns the container item type (the first parameter type).
+	 * \throws `std::runtime_error` if there is no such type.
+	 */
 	const AnyType &itemType() const {
 		if (type_params.empty())
 			throw std::runtime_error("Missing container item type");
@@ -98,21 +113,55 @@ struct Container: AbstractType
 	void resolve(Structures &structures, ErrorLog &log);
 };
 
+/**
+ * Pointer types (T *)
+ *
+ * \ingroup types
+ */
 struct PointerType: Container
 {
+	/**
+	 * Constructs a pointer of unknown type
+	 */
 	PointerType();
+	/**
+	 * Constructs a pointer to a type built from `args`.
+	 */
 	template <typename... Args>
 	PointerType(std::string_view debug_name, Args &&... args):
 		Container(debug_name, std::forward<Args>(args)...)
 	{
 	}
+	/**
+	 * Constructs a pointer type from xml.
+	 *
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
+	 * \param[in] log any error occuring while parsing this element is logged
+	 * for a container of pointers
+	 */
 	PointerType(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log);
 
 	bool is_array = false;
 };
 
+/**
+ * Static arrays (T[extent] or std::array<T, extent>)
+ *
+ * Arrays require exactly one parameter type, the item type.
+ *
+ * \ingroup types
+ */
 struct StaticArray: Container
 {
+	/**
+	 * Constructs an array from xml.
+	 *
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
+	 * \param[in] log any error occuring while parsing this element is logged
+	 * for a container of pointers
+	 */
 	StaticArray(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log);
 	/**
 	 * Tag for the static string constructor.
@@ -122,17 +171,30 @@ struct StaticArray: Container
 	static inline struct static_string_t {} static_string;
 	/**
 	 * Constructs a static string from xml.
+	 *
+	 * \param[in] debug_name used for debugging/logging
+	 * \param[in] element xml element to parse
 	 */
 	StaticArray(std::string_view debug_name, static_string_t, const pugi::xml_node element);
 	static inline constexpr std::size_t NoExtent = -1;
 	/**
-	 * Extent of the array if possible, NoExtent when not applicable.
+	 * Extent of the array.
+	 *
+	 * NoExtent when it is not set. resolve will try to guess the extent
+	 * from index_enum.
 	 */
 	std::size_t extent = NoExtent;
 
 	void resolve(Structures &structures, ErrorLog &log);
 };
 
+/**
+ * Containers from std library
+ *
+ * The required number of parameter types depends on the Type of the container.
+ *
+ * \ingroup types
+ */
 struct StdContainer: Container
 {
 	enum Type {
@@ -161,6 +223,10 @@ struct StdContainer: Container
 	 */
 	static std::string to_string(Type type);
 
+	/**
+	 * If type requires its parameter types to be complete to be complete
+	 * itself (for computing size).
+	 */
 	static constexpr bool requiresCompleteTypes(Type type)
 	{
 		switch (type) {
@@ -189,6 +255,13 @@ struct StdContainer: Container
 	}
 };
 
+/**
+ * Container types from DF.
+ *
+ * A compound is built correponding to the instantiation of the template.
+ *
+ * \ingroup types
+ */
 struct DFContainer: Container
 {
 	enum Type {
@@ -228,12 +301,11 @@ struct DFContainer: Container
 	DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, Type container_type);
 	static inline struct linked_list_t {} linked_list;
 	/**
-	 * Constructs a container from xml.
+	 * Constructs a DF linked list node type from xml.
 	 *
 	 * \param[in] debug_name used for debugging/logging
 	 * \param[in] element xml element to parse
 	 * \param[in] log any error occuring while parsing this element is logged
-	 * \param[in] type of the DF container
 	 */
 	DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, linked_list_t);
 
