@@ -18,7 +18,7 @@ A `dfs::ReaderFactory` object must be created from `dfs::Structures` and `dfs::A
 
 Any type with a `dfs::ItemReader` specialization may be read.
 
-## Using compound readers
+## Using compound readers {#compoundreaders}
 
 The most simple way to make a structure or union readable is adding a `reader_type` alias to an instance of `dfs::StructureReader`, `dfs::StructureReaderSeq`, `dfs::UnionReader`, or any other type satisfying the `dfs::CompoundReaderConcept` concept.
 
@@ -150,19 +150,28 @@ struct dfs::polymorphic_reader_type<histfig_entity_link> {
 
 ### Included item readers
 
-| C++ type                              | df-structures type                   |
-|---------------------------------------|--------------------------------------|
-| `std::unique_ptr<T>`                  | compatible `pointer`                 |
-| `std::shared_ptr<T>`                  | compatible `pointer`                 |
-| `std::array<T, N>`                    | `static-array` with same extent      |
-| `std::string`                         | `stl-string`                         |
-| `std::variant<...>`                   | ``is-union='true'`` compound         |
-| resizable STL-style containers        | `stl-vector`<br />`df-array`<br />`df-linked-list` |
-| any integral<br />enum<br />"integral-like" | any integral primitive type<br />enum<br />bitfield<br />pointer |
-| structure, union                      | compound specified in the `dfs::StructureReader` or `dfs::UnionReader` specialization |
-| `std::vector<bool>`                   | `df-flagarray`                       |
+| C++ type                              | df-structures type                   | ItemReader specialization  |
+|---------------------------------------|--------------------------------------|----------------------------|
+| `std::unique_ptr<T>`                  | compatible `pointer`                 | [ItemReader<Ptr>]          |
+| `std::shared_ptr<T>`                  | compatible `pointer`                 | [ItemReader<Ptr>]          |
+| `std::array<T, N>`                    | `static-array` with same extent      | [ItemReader<std::array>]   |
+| `std::string`                         | `stl-string`                         | [ItemReader<std::string>]  |
+| `std::variant<...>`                   | ``is-union='true'`` compound         | [ItemReader<std::variant>] |
+| resizable STL-style containers        | `stl-vector`<br />`df-array`<br />`df-linked-list` | [ItemReader<Container>] |
+| any integral<br />enum<br />"integral-like" | any integral primitive type<br />enum<br />bitfield<br />pointer | [ItemReader<Int>] |
+| structure, union                      | compounds (`struct-type`, `class-type`, [see above](#compoundreaders)) | [ItemReader<Struct>] |
+| `std::vector<bool>`                   | `df-flagarray`                       | [ItemReader<Bits>] |
 
 "integral-like" type have a `underlying_type` nested alias to an integral type they can be constructed from.
+
+[ItemReader<Int>]: @ref "dfs::ItemReader< Int >"
+[ItemReader<std::string>]: @ref "dfs::ItemReader< std::string >"
+[ItemReader<Bits>]: @ref "dfs::ItemReader< Bits >"
+[ItemReader<Container>]: @ref "dfs::ItemReader< Container >"
+[ItemReader<std::array>]: @ref "dfs::ItemReader< std::array< T, N > >"
+[ItemReader<Struct>]: @ref "dfs::ItemReader< Struct >"
+[ItemReader<std::variant>]: @ref "dfs::ItemReader< std::variant< T, Ts... > >"
+[ItemReader<Ptr>]: @ref "dfs::ItemReader< Ptr >"
 
 ### Adding custom item readers
 

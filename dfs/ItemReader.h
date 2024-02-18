@@ -50,14 +50,14 @@ struct integral_like<std::chrono::duration<Rep, Period>>: std::true_type {};
  *
  * \ingroup readers
  */
-template <typename T> requires integral_like<T>::value
-class ItemReader<T>
+template <typename Int> requires integral_like<Int>::value
+class ItemReader<Int>
 {
 	std::size_t _size;
 	bool _is_signed;
 
 public:
-	using output_type = T;
+	using output_type = Int;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
 		_size(factory.layout.getTypeInfo(type).size),
@@ -80,28 +80,28 @@ public:
 				case PrimitiveType::SizeT:
 					return false;
 				default:
-					throw TypeError(*primitive_type, typeid(T), "not an integral type");
+					throw TypeError(*primitive_type, typeid(Int), "not an integral type");
 				}
 			}
 			else if (auto pointer = type.get_if<PointerType>()) {
-				if constexpr (!std::is_same_v<T, uintptr_t>)
-					throw TypeError(*pointer, typeid(T), "pointer requires uintptr_t");
+				if constexpr (!std::is_same_v<Int, uintptr_t>)
+					throw TypeError(*pointer, typeid(Int), "pointer requires uintptr_t");
 				else
 					return false;
 			}
 			else
-				throw TypeError(type, typeid(T), "incompatible type");
+				throw TypeError(type, typeid(Int), "incompatible type");
 		}())
 	{
-		if (_size > sizeof(T))
-			throw TypeError(type, typeid(T), std::format("storage is too small ({}, must be at least {})", sizeof(T), _size));
+		if (_size > sizeof(Int))
+			throw TypeError(type, typeid(Int), std::format("storage is too small ({}, must be at least {})", sizeof(Int), _size));
 	}
 
 	std::size_t size() const {
 		return _size;
 	}
 
-	cppcoro::task<> operator()(ReadSession &, MemoryView data, T &out) const {
+	cppcoro::task<> operator()(ReadSession &, MemoryView data, Int &out) const {
 		return (*this)(data, out);
 	}
 
@@ -115,8 +115,8 @@ public:
 		using type = U::underlying_type;
 	};
 
-	cppcoro::task<> operator()(MemoryView data, T &out) const {
-		using out_int = cast_type<T>::type;
+	cppcoro::task<> operator()(MemoryView data, Int &out) const {
+		using out_int = cast_type<Int>::type;
 		if (_is_signed) {
 			switch (_size) {
 			case 1: out = static_cast<out_int>(ABI::get_integer<int8_t>(data)); break;
@@ -205,15 +205,15 @@ public:
  *
  * \ingroup readers
  */
-template <std::derived_from<std::vector<bool>> T>
-class ItemReader<T>
+template <std::derived_from<std::vector<bool>> Bits>
+class ItemReader<Bits>
 {
 	AnyTypeRef _container;
 	std::size_t _size;
 	const CompoundLayout *_compound_layout = nullptr;
 
 public:
-	using output_type = T;
+	using output_type = Bits;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
 		_container(type),
@@ -225,7 +225,7 @@ public:
 				case PrimitiveType::StdBitVector:
 					break;
 				default:
-					throw TypeError(primitive_type, typeid(T), "incompatible container");
+					throw TypeError(primitive_type, typeid(Bits), "incompatible container");
 				}
 			},
 			[&, this](const DFContainer &container) {
@@ -235,11 +235,11 @@ public:
 					_compound_layout = &layout;
 					break;
 				default:
-					throw TypeError(type, typeid(T), "incompatible container");
+					throw TypeError(type, typeid(Bits), "incompatible container");
 				}
 			},
 			[&](const AbstractType &) {
-				throw TypeError(type, typeid(T), "incompatible container");
+				throw TypeError(type, typeid(Bits), "incompatible container");
 			}
 		});
 	}
@@ -302,15 +302,15 @@ private:
  *
  * \ingroup readers
  */
-template <typename T> requires requires (T container, typename T::size_type size) {
-	requires !std::derived_from<T, std::vector<bool>>;
-	requires std::ranges::output_range<T, typename T::value_type>;
-	requires std::ranges::sized_range<T>;
+template <typename Container> requires requires (Container container, typename Container::size_type size) {
+	requires !std::derived_from<Container, std::vector<bool>>;
+	requires std::ranges::output_range<Container, typename Container::value_type>;
+	requires std::ranges::sized_range<Container>;
 	container.resize(size);
 }
-class ItemReader<T>
+class ItemReader<Container>
 {
-	using value_type = T::value_type;
+	using value_type = Container::value_type;
 
 	AnyTypeRef _container_type;
 	AnyTypeRef _item_type;
@@ -321,7 +321,7 @@ class ItemReader<T>
 	const CompoundLayout *_compound_layout = nullptr;
 
 public:
-	using output_type = T;
+	using output_type = Container;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
 		_container_type(type),
@@ -331,7 +331,7 @@ public:
 				case StdContainer::StdVector:
 					return container.itemType();
 				default:
-					throw TypeError(container, typeid(T), "incompatible container");
+					throw TypeError(container, typeid(Container), "incompatible container");
 				}
 			},
 			[](const DFContainer &container) -> AnyTypeRef {
@@ -340,11 +340,11 @@ public:
 				case DFContainer::DFLinkedList:
 					return container.itemType();
 				default:
-					throw TypeError(container, typeid(T), "incompatible container");
+					throw TypeError(container, typeid(Container), "incompatible container");
 				}
 			},
 			[&](const AbstractType &) -> AnyTypeRef {
-				throw TypeError(type, typeid(T), "incompatible container");
+				throw TypeError(type, typeid(Container), "incompatible container");
 			}
 		})),
 		_size(factory.layout.getTypeInfo(type).size),
@@ -361,7 +361,7 @@ public:
 	}
 
 	template <std::ranges::sized_range... Args> requires ReadableType<value_type, std::ranges::range_value_t<Args>...>
-	cppcoro::task<> operator()(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	cppcoro::task<> operator()(ReadSession &session, MemoryView data, Container &out, Args &&...args) const
 	{
 		return _container_type.visit(overloaded{
 			[&, this](const StdContainer &container) -> cppcoro::task<> {
@@ -393,7 +393,7 @@ public:
 
 private:
 	template <typename... Args>
-	cppcoro::task<> read_contiguous_data(ReadSession &session, uintptr_t addr, std::size_t len, T &out, Args &&...args) const
+	cppcoro::task<> read_contiguous_data(ReadSession &session, uintptr_t addr, std::size_t len, Container &out, Args &&...args) const
 	{
 		using std::size, std::begin;
 		if (len == 0)
@@ -417,7 +417,7 @@ private:
 	}
 
 	template <typename... Args>
-	cppcoro::task<> read_std_vector(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	cppcoro::task<> read_std_vector(ReadSession &session, MemoryView data, Container &out, Args &&...args) const
 	{
 		auto vec_info = co_await session.abi().read_vector(session.process(), data, _item_info);
 		if (vec_info.err)
@@ -426,7 +426,7 @@ private:
 	}
 
 	template <typename... Args>
-	cppcoro::task<> read_df_array(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	cppcoro::task<> read_df_array(ReadSession &session, MemoryView data, Container &out, Args &&...args) const
 	{
 		auto data_offset = _compound_layout->member_offsets.at(DFContainer::DFArrayData);
 		auto size_offset = _compound_layout->member_offsets.at(DFContainer::DFArraySize);
@@ -436,7 +436,7 @@ private:
 	}
 
 	template <typename... Args>
-	cppcoro::task<> read_df_linkedlist(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	cppcoro::task<> read_df_linkedlist(ReadSession &session, MemoryView data, Container &out, Args &&...args) const
 	{
 		using std::size, std::begin;
 		auto item_offset = _compound_layout->member_offsets.at(DFContainer::DFLinkedListItem);
@@ -518,19 +518,19 @@ public:
  *
  * \ingroup readers
  */
-template <ReadableStructure T>
-class ItemReader<T>
+template <ReadableStructure Struct>
+class ItemReader<Struct>
 {
-	compound_reader_type_t<T> *_compound_reader;
+	compound_reader_type_t<Struct> *_compound_reader;
 
 public:
-	using output_type = T;
+	using output_type = Struct;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
 		_compound_reader([&](){
-			auto compound_reader = factory.getCompoundReader<T>();
+			auto compound_reader = factory.getCompoundReader<Struct>();
 			if (compound_reader->type != type.get_if<Compound>())
-				throw TypeError(type, typeid(T), "invalid type");
+				throw TypeError(type, typeid(Struct), "invalid type");
 			return compound_reader;
 		}())
 	{
@@ -540,8 +540,8 @@ public:
 		return _compound_reader->info.size;
 	}
 
-	template <typename... Args> requires CompoundReaderWithArgs<compound_reader_type_t<T>, Args...>
-	cppcoro::task<> operator()(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	template <typename... Args> requires CompoundReaderWithArgs<compound_reader_type_t<Struct>, Args...>
+	cppcoro::task<> operator()(ReadSession &session, MemoryView data, Struct &out, Args &&...args) const
 	{
 		co_await _compound_reader->read(session, data, out, std::forward<Args>(args)...);
 	}
