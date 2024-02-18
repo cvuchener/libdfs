@@ -196,11 +196,10 @@ public:
 		}
 	}
 };
-
 /**
  * Reader for bit vectors.
  *
- * It accepts and PrimitiveType::DFFlagArray types.
+ * It accepts DFContainer::DFFlagArray container types.
  *
  * \todo support PrimitiveType::StdBitVector
  *
@@ -209,146 +208,258 @@ public:
 template <std::derived_from<std::vector<bool>> T>
 class ItemReader<T>
 {
-	AnyTypeRef _type;
-	struct {
-		const CompoundLayout *compound;
-		std::size_t size;
-	} _layout;
+	AnyTypeRef _container;
+	std::size_t _size;
+	const CompoundLayout *_compound_layout = nullptr;
 
 public:
 	using output_type = T;
 
 	ItemReader(ReaderFactory &factory, AnyTypeRef type):
-		_type(type),
-		_layout([&]() -> decltype(_layout) {
-			if (auto primitive_type = type.get_if<PrimitiveType>()) {
-				auto type_info = factory.abi.primitive_type(primitive_type->type);
-				switch (primitive_type->type) {
+		_container(type),
+		_size(factory.layout.getTypeInfo(type).size)
+	{
+		type.visit(overloaded{
+			[&, this](const PrimitiveType &primitive_type) {
+				switch (primitive_type.type) {
 				case PrimitiveType::StdBitVector:
-					return { nullptr, type_info.size };
+					break;
 				default:
-					throw TypeError(*primitive_type, typeid(std::string), "not a bit vector type");
+					throw TypeError(primitive_type, typeid(T), "incompatible container");
 				}
-			}
-			else if (auto container = type.get_if<DFContainer>()) {
-				auto type_info = factory.layout.getTypeInfo(*container);
-				const auto &layout = factory.layout.compound_layout.at(container->compound.get());
-				switch (container->container_type) {
+			},
+			[&, this](const DFContainer &container) {
+				const auto &layout = factory.layout.compound_layout.at(container.compound.get());
+				switch (container.container_type) {
 				case DFContainer::DFFlagArray:
-					return { &layout, type_info.size };
+					_compound_layout = &layout;
+					break;
 				default:
-					throw TypeError(*primitive_type, typeid(std::string), "not a bit vector type");
+					throw TypeError(type, typeid(T), "incompatible container");
 				}
+			},
+			[&](const AbstractType &) {
+				throw TypeError(type, typeid(T), "incompatible container");
 			}
-			else
-				throw TypeError(type, typeid(std::string), "not a primitive type");
-		}())
-	{
-	}
-
-	std::size_t size() const {
-		return _layout.size;
-	}
-
-	cppcoro::task<> operator()(ReadSession &session, MemoryView data, std::vector<bool> &out) const
-	{
-		if (auto primitive_type = _type.get_if<PrimitiveType>()) {
-			switch (primitive_type->type) {
-			case PrimitiveType::StdBitVector:
-			default:
-				throw std::system_error(ItemReaderError::NotImplemented);
-			}
-		}
-		else if (auto container = _type.get_if<DFContainer>()) {
-			const auto &offsets = _layout.compound->member_offsets;
-			switch (container->container_type) {
-			case DFContainer::DFFlagArray: {
-				uintptr_t addr = session.abi().get_pointer(data.subview(offsets.at(0)));
-				uint32_t len = session.abi().get_integer<uint32_t>(data.subview(offsets.at(1)));
-				MemoryBuffer data(addr, len);
-				if (auto err = co_await session.process().read(data))
-					throw std::system_error(err);
-				out.resize(len*8);
-				for (unsigned int i = 0; i < len*8; ++i)
-					out[i] = data[i/8] & (1<<(i%8));
-				break;
-			}
-			default:
-				throw std::system_error(ItemReaderError::NotImplemented);
-			}
-		}
-	}
-
-};
-
-/**
- * Reader for `std::vector` (except `std::vector<bool>`).
- *
- * It accepts StdContainer::StdVector container.
- *
- * \ingroup readers
- */
-template <typename T> requires (!std::is_same_v<T, bool>)
-class ItemReader<std::vector<T>>
-{
-	const StdContainer &_container;
-	std::size_t _size;
-	TypeInfo _item_info;
-	ItemReader<T> _item_reader;
-
-public:
-	using output_type = std::vector<T>;
-
-	ItemReader(ReaderFactory &factory, AnyTypeRef type):
-		_container([&]() -> const StdContainer & {
-			if (auto container = type.get_if<StdContainer>()) {
-				if (container->container_type != StdContainer::StdVector)
-					throw TypeError(*container, typeid(std::vector<T>), "incompatible container");
-				if (container->type_params.size() != 1)
-					throw std::invalid_argument("StdVector requires 1 type parameter");
-				return *container;
-			}
-			else
-				throw TypeError(type, typeid(std::vector<T>), "not a container");
-		}()),
-		_size(factory.abi.container_type(_container.container_type).size),
-		_item_info(factory.layout.getTypeInfo(_container.itemType())),
-		_item_reader(factory, _container.itemType())
-	{
+		});
 	}
 
 	std::size_t size() const {
 		return _size;
 	}
 
-	template <std::ranges::random_access_range... Args> requires ReadableType<T, std::ranges::range_value_t<Args>...>
-	cppcoro::task<> operator()(ReadSession &session, MemoryView data, std::vector<T> &out, Args &&...args) const
+	cppcoro::task<> operator()(ReadSession &session, MemoryView data, std::vector<bool> &out) const
 	{
-		if (_container.container_type == StdContainer::StdVector) {
-			auto vec_info = co_await session.abi().read_vector(session.process(), data, _item_info);
-			if (vec_info.err)
-				throw std::system_error(vec_info.err);
-			if (vec_info.size == 0)
-				co_return;
-			std::size_t bytes = vec_info.size * _item_info.size;
-			MemoryBuffer item_data(vec_info.data, bytes);
-			if (auto err = co_await session.process().read(item_data))
-				throw std::system_error(err);
-			out.resize(vec_info.size);
-			using std::size;
-			if (!((size(args) == vec_info.size) && ...))
-				throw std::runtime_error("extra args size does not match vector size");
-			std::vector<cppcoro::task<>> tasks;
-			tasks.reserve(vec_info.size);
-			for (std::size_t i = 0; i < vec_info.size; ++i)
+		return _container.visit(overloaded{
+			[&, this](const PrimitiveType &primitive_type) -> cppcoro::task<> {
+				switch (primitive_type.type) {
+				case PrimitiveType::StdBitVector:
+					// TODO
+				default:
+					throw std::system_error(ItemReaderError::NotImplemented);
+				}
+			},
+			[&, this](const DFContainer &container) -> cppcoro::task<> {
+				switch (container.container_type) {
+				case DFContainer::DFFlagArray:
+					return read_df_flagarray(session, data, out);
+				default:
+					// unreachable
+					throw std::system_error(ItemReaderError::NotImplemented);
+				}
+			},
+			[&](const AbstractType &) -> cppcoro::task<> {
+				// unreachable
+				throw std::system_error(ItemReaderError::NotImplemented);
+			}
+		});
+	}
+
+private:
+	cppcoro::task<> read_df_flagarray(ReadSession &session, MemoryView data, std::vector<bool> &out) const
+	{
+		auto bits_offset = _compound_layout->member_offsets.at(DFContainer::DFFlagArrayBits);
+		auto size_offset = _compound_layout->member_offsets.at(DFContainer::DFFlagArraySize);
+		uintptr_t addr = session.abi().get_pointer(data.subview(bits_offset));
+		uint32_t len = session.abi().get_integer<uint32_t>(data.subview(size_offset));
+		MemoryBuffer flagdata(addr, len);
+		if (auto err = co_await session.process().read(flagdata))
+			throw std::system_error(err);
+		out.resize(len*8);
+		for (unsigned int i = 0; i < len*8; ++i)
+			out[i] = bool(flagdata[i/8] & (1<<(i%8)));
+	}
+};
+
+
+/**
+ * Reader for stl-style containers (except std::vector<bool>).
+ *
+ * It accepts StdContainer::StdVector, DFContainer::DFArray,
+ * DFContainer::DFLinkedList container types.
+ *
+ * \todo support other StdContainer types.
+ *
+ * \ingroup readers
+ */
+template <typename T> requires requires (T container, typename T::size_type size) {
+	requires !std::derived_from<T, std::vector<bool>>;
+	requires std::ranges::output_range<T, typename T::value_type>;
+	requires std::ranges::sized_range<T>;
+	container.resize(size);
+}
+class ItemReader<T>
+{
+	using value_type = T::value_type;
+
+	AnyTypeRef _container_type;
+	AnyTypeRef _item_type;
+	const Container *_container;
+	std::size_t _size;
+	TypeInfo _item_info;
+	ItemReader<value_type> _item_reader;
+	const CompoundLayout *_compound_layout = nullptr;
+
+public:
+	using output_type = T;
+
+	ItemReader(ReaderFactory &factory, AnyTypeRef type):
+		_container_type(type),
+		_item_type(type.visit(overloaded{
+			[](const StdContainer &container) -> AnyTypeRef {
+				switch (container.container_type) {
+				case StdContainer::StdVector:
+					return container.itemType();
+				default:
+					throw TypeError(container, typeid(T), "incompatible container");
+				}
+			},
+			[](const DFContainer &container) -> AnyTypeRef {
+				switch (container.container_type) {
+				case DFContainer::DFArray:
+				case DFContainer::DFLinkedList:
+					return container.itemType();
+				default:
+					throw TypeError(container, typeid(T), "incompatible container");
+				}
+			},
+			[&](const AbstractType &) -> AnyTypeRef {
+				throw TypeError(type, typeid(T), "incompatible container");
+			}
+		})),
+		_size(factory.layout.getTypeInfo(type).size),
+		_item_info(factory.layout.getTypeInfo(_item_type)),
+		_item_reader(factory, _item_type)
+	{
+		if (auto container = type.get_if<DFContainer>()) {
+			_compound_layout = &factory.layout.compound_layout.at(container->compound.get());
+		}
+	}
+
+	std::size_t size() const {
+		return _size;
+	}
+
+	template <std::ranges::sized_range... Args> requires ReadableType<value_type, std::ranges::range_value_t<Args>...>
+	cppcoro::task<> operator()(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	{
+		return _container_type.visit(overloaded{
+			[&, this](const StdContainer &container) -> cppcoro::task<> {
+				switch (container.container_type) {
+				case StdContainer::StdVector:
+					return read_std_vector(session, data, out, std::forward<Args>(args)...);
+				default:
+					// unreachable
+					throw std::system_error(ItemReaderError::NotImplemented);
+				}
+			},
+			[&, this](const DFContainer &container) -> cppcoro::task<> {
+				switch (container.container_type) {
+				case DFContainer::DFArray:
+					return read_df_array(session, data, out, std::forward<Args>(args)...);
+				case DFContainer::DFLinkedList:
+					return read_df_linkedlist(session, data, out, std::forward<Args>(args)...);
+				default:
+					// unreachable
+					throw std::system_error(ItemReaderError::NotImplemented);
+				}
+			},
+			[&](const AbstractType &) -> cppcoro::task<> {
+				// unreachable
+				throw std::system_error(ItemReaderError::NotImplemented);
+			}
+		});
+	}
+
+private:
+	template <typename... Args>
+	cppcoro::task<> read_contiguous_data(ReadSession &session, uintptr_t addr, std::size_t len, T &out, Args &&...args) const
+	{
+		using std::size, std::begin;
+		if (len == 0)
+			co_return;
+		MemoryBuffer item_data(addr, len * _item_info.size);
+		if (auto err = co_await session.process().read(item_data))
+			throw std::system_error(err);
+		out.resize(len);
+		if (!((size(args) == len) && ...))
+			throw std::runtime_error("extra args size does not match container size");
+		std::vector<cppcoro::task<>> tasks;
+		tasks.reserve(len);
+		[&, this](auto out, auto... args) {
+			for (std::size_t i = 0; i < len; ++i)
 				tasks.push_back(_item_reader(session,
 					     item_data.view(i*_item_info.size, _item_info.size),
-					     out[i],
-					     *std::next(std::begin(std::forward<decltype(args)>(args)), i)...));
-			co_await cppcoro::when_all(std::move(tasks));
+					     *out++,
+					     *args++...));
+		}(begin(out), begin(std::forward<Args>(args))...);
+		co_await cppcoro::when_all(std::move(tasks));
+	}
+
+	template <typename... Args>
+	cppcoro::task<> read_std_vector(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	{
+		auto vec_info = co_await session.abi().read_vector(session.process(), data, _item_info);
+		if (vec_info.err)
+			throw std::system_error(vec_info.err);
+		co_await read_contiguous_data(session, vec_info.data, vec_info.size, out, std::forward<Args>(args)...);
+	}
+
+	template <typename... Args>
+	cppcoro::task<> read_df_array(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	{
+		auto data_offset = _compound_layout->member_offsets.at(DFContainer::DFArrayData);
+		auto size_offset = _compound_layout->member_offsets.at(DFContainer::DFArraySize);
+		uintptr_t addr = session.abi().get_pointer(data.subview(data_offset));
+		uint16_t len = session.abi().get_integer<uint32_t>(data.subview(size_offset));
+		co_await read_contiguous_data(session, addr, len, out, std::forward<Args>(args)...);
+	}
+
+	template <typename... Args>
+	cppcoro::task<> read_df_linkedlist(ReadSession &session, MemoryView data, T &out, Args &&...args) const
+	{
+		using std::size, std::begin;
+		auto item_offset = _compound_layout->member_offsets.at(DFContainer::DFLinkedListItem);
+		auto next_offset = _compound_layout->member_offsets.at(DFContainer::DFLinkedListNext);
+		std::vector<MemoryBuffer> nodes;
+		while (uintptr_t next_addr = session.abi().get_pointer(data.subview(next_offset))) {
+			auto &next_node = nodes.emplace_back(next_addr, _size);
+			if (auto err = co_await session.process().read(next_node))
+				throw std::system_error(err);
+			data = next_node;
 		}
-		else
-			throw std::system_error(ItemReaderError::NotImplemented);
+		out.resize(nodes.size());
+		if (!((size(args) == nodes.size()) && ...))
+			throw std::runtime_error("extra args size does not match container size");
+		std::vector<cppcoro::task<>> item_tasks;
+		[&, this](auto out, auto... args) {
+			for (std::size_t i = 0; i < nodes.size(); ++i)
+				item_tasks.push_back(_item_reader(session,
+						nodes[i].view(item_offset),
+						*out++,
+						*args++...));
+		}(begin(out), begin(std::forward<Args>(args))...);
+		co_await cppcoro::when_all(std::move(item_tasks));
 	}
 };
 

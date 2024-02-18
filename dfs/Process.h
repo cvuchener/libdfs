@@ -73,6 +73,10 @@ struct MemoryBufferRef
 {
 	uintptr_t address;
 	std::span<uint8_t> data;
+
+	operator MemoryView() const {
+		return { address, data };
+	}
 };
 
 /**
@@ -107,7 +111,7 @@ public:
 	const uint8_t *begin() const { return _data.get(); }
 	const uint8_t *end() const { return _data.get()+_size; }
 
-	operator const MemoryView() const {
+	operator MemoryView() const {
 		return { _address, {_data.get(), _size}};
 	}
 

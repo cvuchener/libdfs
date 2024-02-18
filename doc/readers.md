@@ -154,12 +154,12 @@ struct dfs::polymorphic_reader_type<histfig_entity_link> {
 |---------------------------------------|--------------------------------------|
 | `std::unique_ptr<T>`                  | compatible `pointer`                 |
 | `std::shared_ptr<T>`                  | compatible `pointer`                 |
-| `std::array<T, N>`                    | `static-array` of compatible type and same extent |
+| `std::array<T, N>`                    | `static-array` with same extent      |
 | `std::string`                         | `stl-string`                         |
-| `std::variant<...>`                   | ``is-union='true'`` compound with matching members |
-| `std::vector<T>`                      | `stl-vector` of compatible type      |
-| any integral, enum or "integral-like" type | any integral primitive type, enum, bitfield or pointer |
-| structure, union                      | exact type specified in the `dfs::StructureReader` or `dfs::UnionReader` |
+| `std::variant<...>`                   | ``is-union='true'`` compound         |
+| resizable STL-style containers        | `stl-vector`<br />`df-array`<br />`df-linked-list` |
+| any integral<br />enum<br />"integral-like" | any integral primitive type<br />enum<br />bitfield<br />pointer |
+| structure, union                      | compound specified in the `dfs::StructureReader` or `dfs::UnionReader` specialization |
 | `std::vector<bool>`                   | `df-flagarray`                       |
 
 "integral-like" type have a `underlying_type` nested alias to an integral type they can be constructed from.
