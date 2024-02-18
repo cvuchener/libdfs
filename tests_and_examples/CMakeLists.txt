@@ -29,6 +29,11 @@ dfs_generate_df_types(TARGET reader
 		unit_flags3
 		unit_flags4
 		cie_add_tag_mask1
+		profession
+		job_skill_class
+		job_skill
+		job_type_class
+		job_type
 )
 target_include_directories(reader PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(reader dfs::dfs)

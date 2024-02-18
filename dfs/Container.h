@@ -244,7 +244,7 @@ struct StdContainer: Container
 	 * \param[in] debug_name used for debugging/logging
 	 * \param[in] element xml element to parse
 	 * \param[in] log any error occuring while parsing this element is logged
-	 * \param[in] type of the std container
+	 * \param[in] container_type of the std container
 	 */
 	StdContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, Type container_type);
 	template <typename... Args>
@@ -258,23 +258,63 @@ struct StdContainer: Container
 /**
  * Container types from DF.
  *
- * A compound is built correponding to the instantiation of the template.
+ * A \ref compound is built correponding to the instantiation of the template.
  *
  * \ingroup types
  */
 struct DFContainer: Container
 {
 	enum Type {
-		DFFlagArray,	///< `struct { uint8_t *bits; uint32_t size; }`
-		DFArray,	///< `struct { T *data; unsigned short size; }`
-		DFLinkedList,	///< `struct linked_list_t {
-				///<     T *item;
-				///<     linked_list_t<T> *prev;
-				///<     linked_list_t<T> *next;
-				///< }`
-		// Type count
-		Count	///< container type count
+		/**
+		 * DF flag array
+		 *
+		 * It has no type parameter, but usually an Container::index_enum.
+		 *
+		 *     struct flag_array {
+		 *         uint8_t *bits;
+		 *         uint32_t size;
+		 *     };
+		 */
+		DFFlagArray,
+		/**
+		 * DF array
+		 *
+		 * Contiguous storage. Type parameter is the item type (`T`).
+		 *
+		 *     struct array {
+		 *         T *data;
+		 *         unsigned short size;
+		 *     };
+		 */
+		DFArray,
+		/**
+		 * DF linked list
+		 *
+		 * Type parameter is a pointer to the item type (`T *`).
+		 *
+		 *     struct linked_list {
+		 *         T *item;
+		 *         linked_list<T> *prev;
+		 *         linked_list<T> *next;
+		 *     };
+		 */
+		DFLinkedList,
 	} container_type;
+
+	/**
+	 * \name Member index for different container types.
+	 *
+	 * \{
+	 */
+	static inline constexpr std::size_t
+		DFFlagArrayBits = 0, ///< flag_array::bits index \sa DFFlagArray
+		DFFlagArraySize = 1, ///< flag_array::size index \sa DFFlagArray
+		DFArrayData = 0, ///< array::data index \sa DFArray
+		DFArraySize = 1, ///< array::size index \sa DFArray
+		DFLinkedListItem = 0, ///< linked_list::item index \sa DFLinkedList
+		DFLinkedListPrev = 1, ///< linked_list::prev index \sa DFLinkedList
+		DFLinkedListNext = 2; ///< linked_list::next index \sa DFLinkedList
+	/// \}
 
 	static string_map<Type> TypeNames; ///< maps xml element names to enum values
 	/**
@@ -296,10 +336,16 @@ struct DFContainer: Container
 	 * \param[in] debug_name used for debugging/logging
 	 * \param[in] element xml element to parse
 	 * \param[in] log any error occuring while parsing this element is logged
-	 * \param[in] type of the DF container
+	 * \param[in] container_type of the DF container
 	 */
 	DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, Type container_type);
-	static inline struct linked_list_t {} linked_list;
+
+	/**
+	 * Tag for the linked list constructor.
+	 *
+	 * \sa DFContainer(std::string_view, const pugi::xml_node, ErrorLog &, linked_list_t)
+	 */
+	static inline constexpr struct linked_list_t {} linked_list = {};
 	/**
 	 * Constructs a DF linked list node type from xml.
 	 *

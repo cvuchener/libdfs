@@ -242,6 +242,8 @@ std::optional<UnresolvedReferenceError> Structures::resolve(AnyType &type, Error
 			return std::nullopt;
 		},
 		[this]<typename T>(TypeRef<T> &ref) -> std::optional<UnresolvedReferenceError> {
+			if (ref._ptr)
+				return std::nullopt;
 			if constexpr (requires {resolve(ref);})
 				return resolve(ref);
 			else

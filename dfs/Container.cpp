@@ -207,14 +207,18 @@ DFContainer::DFContainer(std::string_view debug_name, const pugi::xml_node eleme
 }
 
 DFContainer::DFContainer(std::string_view debug_name, const pugi::xml_node element, ErrorLog &log, linked_list_t):
-	Container(debug_name, element.attribute("item-type").value()),
+	Container(debug_name),
 	container_type(DFLinkedList),
 	compound(std::make_unique<Compound>())
 {
-	auto self_type = element.attribute("type-name").value();
+	compound->debug_name = debug_name;
+	auto self_type = TypeRef<DFContainer>(element.attribute("type-name").value(), this);
 	compound->addMember<PointerType>("item", element.attribute("item-type").value());
 	compound->addMember<PointerType>("prev", std::in_place_type<DFContainer>, self_type);
 	compound->addMember<PointerType>("next", std::in_place_type<DFContainer>, self_type);
+	type_params.emplace_back(std::in_place_type<PointerType>,
+			"",
+			&compound->members.at(0).type.get<PointerType>());
 }
 
 void DFContainer::resolve(Structures &structures, ErrorLog &log)

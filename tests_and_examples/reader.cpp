@@ -509,6 +509,17 @@ struct historical_figure
 	>;
 };
 
+struct job
+{
+	int id;
+	job_type_t type;
+
+	using reader_type = StructureReader<job, "job",
+		Field<&job::id, "id">,
+		Field<&job::type, "job_type">
+	>;
+};
+
 struct world_raws
 {
 	std::vector<std::unique_ptr<material_template>> material_templates;
@@ -615,12 +626,14 @@ struct world
 	std::vector<std::unique_ptr<unit>> active_units;
 	std::vector<std::unique_ptr<historical_figure>> historical_figures;
 	std::vector<std::unique_ptr<poetic_form>> poetic_forms;
+	std::vector<std::unique_ptr<job>> jobs;
 	world_raws raws;
 
 	using reader_type = StructureReader<world, "world",
 		Field<&world::active_units, "units.active">,
 		Field<&world::historical_figures, "history.figures">,
 		Field<&world::poetic_forms, "poetic_forms.all">,
+		Field<&world::jobs, "jobs.list">,
 		Field<&world::raws, "raws">
 	>;
 };
@@ -1069,6 +1082,11 @@ int main(int argc, char *argv[]) try
 	//			std::cout << "     - " << to_string(part->line_subject[i]) << ", " << part->line_subject_target[i].index() << std::endl;
 	//	}
 	//}
+
+	std::cout << "Jobs:" << std::endl;
+	for (const auto &job: w.jobs) {
+		std::cout << " - " << job->id << " " << to_string(job->type) << std::endl;
+	}
 }
 catch (std::exception &e) {
 	std::cerr << "Could not load structures: " << e.what() << std::endl;
