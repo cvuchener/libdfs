@@ -108,7 +108,8 @@ public:
 		// Enum values
 		out << std::format("enum {} {{\n", name);
 		for (const auto &[value, it]: sorted_values)
-			out << std::format("\t{} = {},\n", it->first, value);
+			if (!it->first.empty())
+				out << std::format("\t{} = {},\n", it->first, value);
 		out << std::format("}};\n");
 
 		// Enum value count
@@ -116,7 +117,8 @@ public:
 
 		out << std::format("constexpr std::array<{}, {}> AllValues = {{\n", name, def.values.size());
 		for (const auto &[name, value]: def.values)
-			out << std::format("\t{},\n", name);
+			if (!name.empty())
+				out << std::format("\t{},\n", name);
 		out << std::format("}};\n\n");
 
 		// Prototypes
@@ -143,7 +145,8 @@ public:
 				"\tstatic const std::map<std::string_view, {0}> names = {{\n",
 				name);
 		for (const auto &[name, item]: def.values)
-			out << std::format("\t\t{{\"{0}\", {0}}},\n", name);
+			if (!name.empty())
+				out << std::format("\t\t{{\"{0}\", {0}}},\n", name);
 		out << "\t};\n"
 			"\tauto it = names.find(str);\n"
 			"\tif (it != names.end())\n"
@@ -157,7 +160,8 @@ public:
 				"\tswitch (value) {{\n",
 				name);
 		for (const auto &[name, item]: def.values)
-			out << std::format("\tcase {0}: return \"{0}\";\n", name);
+			if (!name.empty())
+				out << std::format("\tcase {0}: return \"{0}\";\n", name);
 		out << "\tdefault: return {};\n"
 			"\t}\n"
 			"}\n\n";
@@ -179,8 +183,16 @@ public:
 			for (const auto &value: sorted_values) {
 				const auto &[name, item] = *value.second;
 				auto attr_it = item.attributes.find(attr_name);
-				if (attr_it != item.attributes.end())
-					out << std::format("\tcase {}: return {};\n", name, std::visit(attr_value_to_string, attr_it->second));
+				if (attr_it != item.attributes.end()) {
+					if (!name.empty())
+						out << std::format("\tcase {}: return {};\n",
+								name,
+								std::visit(attr_value_to_string, attr_it->second));
+					else
+						out << std::format("\tcase {}: return {};\n",
+								item.value,
+								std::visit(attr_value_to_string, attr_it->second));
+				}
 			}
 			if (attr_def.default_value)
 				out << std::format("\tdefault: return {};\n", std::visit(attr_value_to_string, attr_def.default_value.value()));
