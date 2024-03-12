@@ -199,6 +199,7 @@ struct StdContainer: Container
 {
 	enum Type {
 		StdSharedPtr,	///< `std::shared_ptr<T>`
+		StdWeakPtr,	///< `std::weak_ptr<T>`
 		StdVector,	///< `std::vector<T>`
 		StdDeque,	///< `std::deque<T>`
 		StdSet,		///< `std::set<T>`

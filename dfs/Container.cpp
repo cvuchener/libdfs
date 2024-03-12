@@ -129,6 +129,7 @@ string_map<StdContainer::Type> StdContainer::TypeNames = {
 	{ "stl-unordered-map", StdContainer::StdUnorderedMap },
 	{ "stl-variant", StdContainer::StdVariant },
 	{ "stl-vector", StdContainer::StdVector },
+	{ "stl-weak-ptr", StdContainer::StdWeakPtr },
 };
 
 std::optional<StdContainer::Type> StdContainer::typeFromTagName(std::string_view name)
@@ -144,6 +145,7 @@ std::string StdContainer::to_string(Type type)
 {
 	switch (type) {
 	case StdSharedPtr: return "stl-shared-ptr";
+	case StdWeakPtr: return "stl-weak-ptr";
 	case StdVector: return "stl-vector";
 	case StdDeque: return "stl-deque";
 	case StdSet: return "stl-set";

@@ -238,6 +238,7 @@ struct ABI
 		auto p = pointer_size<arch>();
 		std::array<TypeInfo, StdContainer::Count> info;
 		info[StdContainer::StdSharedPtr] = {2*p, p};
+		info[StdContainer::StdWeakPtr] = {2*p, p};
 		info[StdContainer::StdVector] = {3*p, p};
 		info[StdContainer::StdDeque] = cxx11
 			? TypeInfo{10*p, p}
@@ -277,6 +278,7 @@ struct ABI
 		auto p = pointer_size<arch>();
 		std::array<TypeInfo, StdContainer::Count> info;
 		info[StdContainer::StdSharedPtr] = {2*p, p};
+		info[StdContainer::StdWeakPtr] = {2*p, p};
 		info[StdContainer::StdVector] = {3*p, p};
 		info[StdContainer::StdDeque] = {5*p, p};
 		info[StdContainer::StdSet] = {2*p, p};
