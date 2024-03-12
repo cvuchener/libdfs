@@ -22,7 +22,6 @@
 #include <dfs/Type.h>
 
 #include <memory>
-#include <variant>
 #include <optional>
 
 namespace pugi { class xml_node; }

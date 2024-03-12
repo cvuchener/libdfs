@@ -264,14 +264,18 @@ struct ObjectChecker
 
 	cppcoro::task<> check_value(std::string name, MemoryView data, const StdContainer &container)
 	{
-		assert(container.type_params.size() == 1);
-		const auto &item_type = container.itemType();
-		auto type_info = layout.getTypeInfo(item_type);
-		if (type_info.size == 0) // skip missing types
-			co_return;
+		const AnyType *item_type = nullptr;
+		TypeInfo type_info;
+		if (container.type_params.size() == 1) {
+			item_type = &container.itemType();
+			type_info = layout.getTypeInfo(*item_type);
+		}
 		const auto &container_info = abi.container_type(container.container_type);
 		switch (container.container_type) {
 		case StdContainer::StdVector: {
+			assert(item_type);
+			if (type_info.size == 0) // skip missing types
+				co_return;
 			auto vec = co_await abi.read_vector(process, data, type_info);
 			if (vec.err) {
 				std::cout << std::format("{} ({:#x}): invalid vector ({})\n", name, data.address,
@@ -295,7 +299,7 @@ struct ObjectChecker
 			}
 			std::vector<cppcoro::task<>> tasks;
 			for (std::size_t i = 0; i < vec.size; ++i) {
-				item_type.visit([&, this](const auto &type){
+				item_type->visit([&, this](const auto &type){
 					tasks.push_back(check_value(
 							std::format("{}[{}]", name, i),
 							item_data.view(i * type_info.size, type_info.size),
@@ -306,7 +310,7 @@ struct ObjectChecker
 			break;
 		}
 		default:
-			break;
+			co_return;
 		}
 	}
 
