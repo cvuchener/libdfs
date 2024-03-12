@@ -162,6 +162,22 @@ StdContainer::StdContainer(std::string_view debug_name, const pugi::xml_node ele
 	Container(debug_name, element, log, false),
 	container_type(container_type)
 {
+	// Hacky support for stl-variant's raw-type
+	if (auto raw_type = element.attribute("raw-type")) {
+		auto is_space = [locale = std::locale("C")](char c) { return std::isspace(c, locale); };
+		std::string_view type_str = raw_type.value();
+		for (auto type_range: type_str | std::views::split(',')) {
+			auto stripped_range = type_range | std::views::drop_while(is_space);
+			auto type = std::string_view(std::begin(stripped_range), std::end(stripped_range));
+			if (type == "std::string")
+				type_params.emplace_back(std::make_unique<PrimitiveType>(PrimitiveType::StdString));
+			else if (type.starts_with("std::function<"))
+				type_params.emplace_back(std::make_unique<PrimitiveType>(PrimitiveType::StdFunction));
+			else
+				log.error("Unknown raw type: {}", type);
+		}
+	}
+
 }
 
 string_map<DFContainer::Type> DFContainer::TypeNames = {
