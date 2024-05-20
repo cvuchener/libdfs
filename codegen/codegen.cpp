@@ -246,15 +246,18 @@ public:
 		out << std::format("\t}} bits;\n\n");
 		out << std::format("\tenum bits_t: {} {{\n", base_type);
 		for (const auto &f: def.flags)
-			out << std::format("\t\t{}_bits = {:#0x},\n", f.name, ((1u<<f.count)-1)<<f.offset);
+			if (!f.name.empty())
+				out << std::format("\t\t{}_bits = {:#0x},\n", f.name, ((1u<<f.count)-1)<<f.offset);
 		out << std::format("\t}};\n\n");
 		out << std::format("\tenum pos_t {{\n");
 		for (const auto &f: def.flags)
-			out << std::format("\t\t{}_pos = {},\n", f.name, f.offset);
+			if (!f.name.empty())
+				out << std::format("\t\t{}_pos = {},\n", f.name, f.offset);
 		out << std::format("\t}};\n\n");
 		out << std::format("\tenum count_t {{\n");
 		for (const auto &f: def.flags)
-			out << std::format("\t\t{}_count = {},\n", f.name, f.count);
+			if (!f.name.empty())
+				out << std::format("\t\t{}_count = {},\n", f.name, f.count);
 		out << std::format("\t}};\n");
 		out << std::format("}};\n\n");
 	}
