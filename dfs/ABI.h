@@ -228,6 +228,7 @@ struct ABI
 		info[PrimitiveType::StdMutex] = {4*p+8, p};
 		info[PrimitiveType::StdConditionVariable] = {48, p};
 		info[PrimitiveType::StdFunction] = {4*p, p};
+		info[PrimitiveType::StdFsPath] = {3*p+16, p};
 		return info;
 	}
 
@@ -269,6 +270,7 @@ struct ABI
 		info[PrimitiveType::StdMutex] = {8*p+16, p};
 		info[PrimitiveType::StdConditionVariable] = {8*p+8, p};
 		info[PrimitiveType::StdFunction] = {6*p+16, 8};
+		info[PrimitiveType::StdFsPath] = {2*p+16, p};
 		return info;
 	}
 

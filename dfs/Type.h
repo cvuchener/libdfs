@@ -83,6 +83,7 @@ struct PrimitiveType: AbstractType
 		StdMutex,	///< `std::mutex`
 		StdConditionVariable,	///< `std::condition_variable`
 		StdFunction,	///< `std::function<void()>`
+		StdFsPath,	///< `std::filesystem::path`
 		// Type count
 		Count ///< primitive type count
 	} type;

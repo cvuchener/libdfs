@@ -34,6 +34,7 @@ string_map<PrimitiveType::Type> PrimitiveType::TypeNames = {
 	{ "static-string", PrimitiveType::Char },
 	{ "stl-bit-vector", PrimitiveType::StdBitVector },
 	{ "stl-condition-variable", PrimitiveType::StdConditionVariable },
+	{ "stl-fs-path", PrimitiveType::StdFsPath },
 	{ "stl-fstream", PrimitiveType::StdFStream },
 	{ "stl-function", PrimitiveType::StdFunction },
 	{ "stl-mutex", PrimitiveType::StdMutex },
@@ -79,6 +80,7 @@ std::string PrimitiveType::to_string(Type type)
 	case StdMutex: return "stl-mutex";
 	case StdConditionVariable: return "stl-condition-variable";
 	case StdFunction: return "stl-function";
+	case StdFsPath: return "stl-fs-path";
 	default: return "invalid";
 	}
 }
